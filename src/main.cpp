@@ -8,12 +8,12 @@
   -> Add floodfill algorithm
   -> Mode switch with buttons code 
   -> Seperate movement, maze solve into two source code files: https://www.geeksforgeeks.org/cpp/build-a-cpp-program-that-have-multiple-source-code-files/
-  -> Add git source control (Research)
   -> walk into the sea once all this is over
 
   Done:
   -> Motor control
   -> Encoder ticks tracking
+  -> Add git source control
 
   Progress: 
   -> Code compiles... i guess
@@ -42,6 +42,7 @@ const int frequency = 30000; // max frequency is 100kHz
 // Variables for encoder
 volatile long ENC1_TICKS = 0;
 volatile long ENC2_TICKS = 0;
+const int ENC_SLOTS = 20; // Placeholder
 
 
 void motorSpeed(int a, int b){
