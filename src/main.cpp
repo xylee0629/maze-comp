@@ -36,15 +36,58 @@
 #define ENC2 13
 #define ENC2_DIRECT 14
 
+// IR Sensor Pins (Placeholder)
+int IR1 = 1; // Left
+int IR2 = 2; // Left
+int IR3 = 3; // Centre
+int IR4 = 4; // Centre
+int IR5 = 5; // Right
+int IR6 = 6; // Right
+
 // Variables for motor
 const int frequency = 30000; // max frequency is 100kHz
+int baseSpeed = 200;
 
 // Variables for encoder
 volatile long ENC1_TICKS = 0;
 volatile long ENC2_TICKS = 0;
 const int ENC_SLOTS = 20; // Placeholder
 
+// Variable for PID
+long threshold = 2000; // Placeholder 
+int *sensor[6] = {&IR1, &IR2, &IR3, &IR4, &IR5, &IR6};
+long sensorValue[6];
+float Kp = 0;
+float Ki = 0;
+float Kd = 0;
+int error, position, speed, lastError;
+int target = 2500;
 
+// IR Sensor read 
+int PID(){
+  // weighted average: 2500 is perfect middle of line 
+  position = (0*sensorValue[0] + 1000*sensorValue[1] + 2000*sensorValue[2] + 3000*sensorValue[3] + 4000*sensorValue[4] + 5000*sensorValue[5]) / (sensorValue[0] + sensorValue[1] + sensorValue[2] + sensorValue[3] + sensorValue[4] + sensorValue[5]);
+  error = target - position;
+  
+  // if is over limit of position
+  if (error < 0)
+  {
+    error = 0;
+  }
+  if (error > 6000)
+  {
+    error = 6000;
+  }
+
+  speed = Kp * error + Kd * (error - lastError);
+  lastError = error;
+
+  int leftSpeed = baseSpeed - speed;
+  int rightSpeed = baseSpeed + speed;
+  return leftSpeed, rightSpeed;
+}
+
+// Motor Function
 void motorSpeed(int a, int b){
   analogWriteFrequency(frequency);
   analogWrite(PWMA, a); // PWM range from 0(OFF) to 255(MAX)
@@ -96,13 +139,45 @@ void setup() {
   pinMode(ENC2, INPUT);
   attachInterrupt(digitalPinToInterrupt(ENC2), readEncoder2, RISING);
 
+  // IR sensor pinMode
+  pinMode(IR1, INPUT);
+  pinMode(IR2, INPUT);
+  pinMode(IR3, INPUT);
+  pinMode(IR4, INPUT);
+  pinMode(IR5, INPUT);
+  pinMode(IR6, INPUT);
+
 }
 
 void loop() {
 
+  // Add calibration for black sensor 
+  for (int i = 0; i < 6; i++){
+    sensorValue[i] = analogRead(*sensor[i]);
+  }
+
+  // detect what situation the car is facing 
+  // forward case: call PID function
+  if ((sensorValue[0] && sensorValue[5]) < threshold && (sensorValue[2] && sensorValue[3]) > threshold){
+    int leftSpeed, rightSpeed = PID();
+    move(leftSpeed, rightSpeed);
+  }
+
+  // leftmost sensor detects black, turn spot right
+  else if (sensorValue[0] > threshold && (sensorValue[2] && sensorValue[3]) > threshold && sensorValue[5] < threshold){
+    move(-baseSpeed, baseSpeed);
+  }
+  // rightmost sensor detects black, turn spot left
+  else if (sensorValue[0] < threshold && (sensorValue[2] && sensorValue[3]) > threshold && sensorValue[5] > threshold){
+    move(baseSpeed, -baseSpeed);
+  }
+  // all sensors detect black, stop
+  else if ((sensorValue[0] && sensorValue[1] && sensorValue[2] && sensorValue[3] && sensorValue[4] + sensorValue[5]) > threshold){
+    move(0, 0);
+  }
+
   // Forward: a = b, Left: a < b, Right: a > b, Backwards: -a = -b
-  move(200, 200);
-  delay(1000);
+
   Serial.println(ENC1_TICKS);
   Serial.println(ENC1_TICKS);
   Serial.println(" ");
