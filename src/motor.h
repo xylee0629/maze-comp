@@ -22,21 +22,33 @@
 class LineFollower
 {
     private:
-        // Variables 
-        long sensorValues[6];
-        long baseSpeed;
-        
+        // Pins
+        int sensor[6] = {IR0, IR1, IR2, IR3, IR4, IR5};
+
+        // Motor variables
+        long sensorValue[6];
+        long threshold;
+        int baseSpeed, adjustSpeed; 
+        int maxSpeed;
+        int memory;
+
+        // PID variable 
+        float Kp, Ki, Kd;
+        int error, position, lastError;
+        int targetPosition;
+
+
         void moveMotors(int leftSpeed, int rightSpeed);
         void readSensors();
-        void PID();
+        int PID();
 
     public:
-        LineFollower();
+        LineFollower(int sensor[6]);
 
         void begin();
 
         void setPID(float p, float i, float d);
-        void setBaseSpeed(int baseSpeed);
+        void setBaseSpeed(int speed);
 
         void update();
 

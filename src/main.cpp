@@ -40,12 +40,12 @@
 #define ENC2_DIRECT 17
 
 // IR Sensor Pins (Placeholder)
-int IR0 = 36; // Left
-int IR1 = 39; // Left
-int IR2 = 34; // Centre
-int IR3 = 35; // Centre
-int IR4 = 32; // Right
-int IR5 = 33; // Right
+int IR0 = 33; // Left33
+int IR1 = 32; // Left32
+int IR2 = 35; // Centre35
+int IR3 = 34; // Centre34
+int IR4 = 39; // Right39
+int IR5 = 36; // Right 36
 
 // LED Pins (6 pins)
 #define RED 
@@ -55,7 +55,7 @@ int IR5 = 33; // Right
 
 // Variables for motor
 const int frequency = 30000; // max frequency is 100kHz
-int baseSpeed = 100;
+int baseSpeed = 50;
 
 // Variables for encoder
 volatile long ENC1_TICKS = 0;
@@ -63,7 +63,7 @@ volatile long ENC2_TICKS = 0;
 const int ENC_SLOTS = 20; // Placeholder
 
 // Variable for PID
-long threshold = 1000; // Placeholder 
+long threshold = 500; // Placeholder 
 int *sensor[6] = {&IR0, &IR1, &IR2, &IR3, &IR4, &IR5};
 long sensorValue[6];
 float Kp = 1.0;
@@ -109,26 +109,7 @@ int PID(){
   speed = Kp * error + Kd * (error - lastError);
   lastError = error;
 
-  // Clamp motor speed 
-  int leftSpeed = baseSpeed - speed;
-  if (leftSpeed > 255)
-  {
-    leftSpeed = 255;
-    }
-  else if (leftSpeed < 0)
-  {
-    leftSpeed = 0;
-  }
-  int rightSpeed = baseSpeed + speed;
-  if (rightSpeed > 255)
-  {
-    rightSpeed = 255;
-  }
-  else if (rightSpeed < 0)
-  {
-    rightSpeed = 0;
-  }
-  return leftSpeed, rightSpeed;
+  return speed;
 }
 
 // Direction function
@@ -136,20 +117,16 @@ void direction()
 {
   // detect what situation the car is facing 
   // Forward: a = b, Left: a < b, Right: a > b, Backwards: -a = -b
-  // forward case: call PID function
-  if ((sensorValue[0] < threshold) && (sensorValue[5] < threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold)){
-    //int leftSpeed, rightSpeed = PID();
-    move(baseSpeed, baseSpeed); // change to PID speed later 
-  }
+  // forward case: call PID functio
 
   // leftmost sensor detects black, turn spot right
-  else if ((sensorValue[0] > threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold) && (sensorValue[5] < threshold)){
+  if (sensorValue[5] > threshold && sensorValue[0] < threshold){
     move(-baseSpeed, baseSpeed);
     yAxis++;
     ENC1_TICKS, ENC2_TICKS = 0;
   }
   // rightmost sensor detects black, turn spot left
-  else if ((sensorValue[0] < threshold) && (sensorValue[2]  > threshold) && (sensorValue[3] > threshold) && (sensorValue[5] > threshold)){
+  else if (sensorValue[0] > threshold && sensorValue[5] < threshold){
     move(baseSpeed, -baseSpeed);
     yAxis--;
     ENC1_TICKS, ENC2_TICKS = 0;
@@ -158,6 +135,7 @@ void direction()
   else if ((sensorValue[0] > threshold) && (sensorValue[1] > threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold) && (sensorValue[4] > threshold) && (sensorValue[5] > threshold)){
     move(0, 0);
   }
+  
 }
 // Consider what happens when the sensor array detects white 
 

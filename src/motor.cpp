@@ -3,24 +3,21 @@
 #include <Arduino.h>
 #include "motor.h"
 
-// Variables for motor
-const int frequency = 30000; // max frequency is 100kHz
-int baseSpeed = 100;
-int memory = 0; // forward-0, left-1, right-2, backwards-3
-
-// Variable for PID
-long threshold = 1000; // Placeholder 
-int sensor[6] = {IR0, IR1, IR2, IR3, IR4, IR5};
-long sensorValue[6];
-float Kp = 1.0;
-float Ki = 1.0;
-float Kd = 1.0;
-int error, position, speed, lastError;
-int target = 2500;
-
-LineFollower::LineFollower()
+LineFollower::LineFollower(int sensor[6])
 {
 
+    // Default values
+    baseSpeed = 100;
+    maxSpeed = 255;
+    threshold = 1000;
+    targetPosition = 2500;
+    lastError = 0;
+    memory = 0; // forward-0, left-1, right-2, backwards-3
+  
+    // Default PID
+    Kp = 1.0; 
+    Ki = 0.0; 
+    Kd = 0.0;
 }
 
 void LineFollower::begin(){
@@ -39,6 +36,18 @@ void LineFollower::begin(){
     pinMode(IR0, INPUT);
 }
 
+void LineFollower::setBaseSpeed(int speed)
+{
+    baseSpeed = speed;
+}
+
+void LineFollower::setPID(float p, float i, float d)
+{
+    Kp = p;
+    Ki = i;
+    Kd = d;
+}
+
 // Motor function
 void LineFollower::moveMotors(int leftSpeed, int rightSpeed){
   digitalWrite(AIN1, HIGH);
@@ -47,21 +56,20 @@ void LineFollower::moveMotors(int leftSpeed, int rightSpeed){
   digitalWrite(BIN2, LOW);
 
   // PWM range from 0(OFF) to 255(MAX)
-  analogWriteFrequency(frequency);
   analogWrite(PWMA, leftSpeed); 
   analogWrite(PWMB, rightSpeed);
 }
 
 void LineFollower::readSensors() {
   for (int i = 0; i < 6; i++) {
-    sensorValues[i] = analogRead(sensor[i]);
+    sensorValue[i] = analogRead(sensor[i]);
   }
 }
 
-int PID(){
+int LineFollower::PID(){
   // weighted average: 2500 is perfect middle of line 
   position = (0*sensorValue[0] + 1000*sensorValue[1] + 2000*sensorValue[2] + 3000*sensorValue[3] + 4000*sensorValue[4] + 5000*sensorValue[5]) / (sensorValue[0] + sensorValue[1] + sensorValue[2] + sensorValue[3] + sensorValue[4] + sensorValue[5]);
-  error = target - position;
+  error = targetPosition - position;
 
   // if is over limit of position
   if (error < 0)
@@ -73,56 +81,44 @@ int PID(){
     error = 6000;
   }
 
-  speed = Kp * error + Kd * (error - lastError);
+  adjustSpeed = Kp * error + Kd * (error - lastError);
   lastError = error;
-
-  // Clamp motor speed 
-  int leftSpeed = baseSpeed - speed;
-  if (leftSpeed > 255)
-  {
-    leftSpeed = 255;
-    }
-  else if (leftSpeed < 0)
-  {
-    leftSpeed = 0;
-  }
-  int rightSpeed = baseSpeed + speed;
-  if (rightSpeed > 255)
-  {
-    rightSpeed = 255;
-  }
-  else if (rightSpeed < 0)
-  {
-    rightSpeed = 0;
-  }
-  return leftSpeed, rightSpeed;
+  return adjustSpeed;
 }
 
-// Direction function
-void direction(int *memory)
+void LineFollower::update()
 {
-  // detect what situation the car is facing 
-  // Forward: a = b, Left: a < b, Right: a > b, Backwards: -a = -b
-  // forward case: call PID function
-  if ((sensorValue[0] < threshold) && (sensorValue[5] < threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold)){
-    //int leftSpeed, rightSpeed = PID();
-    move(baseSpeed, baseSpeed); // change to PID speed later 
-    *memory = 0;
-  }
+    readSensors();
 
-  // leftmost sensor detects black, turn spot right
-  else if ((sensorValue[0] > threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold) && (sensorValue[5] < threshold)){
-    move(-baseSpeed, baseSpeed);
-    *memory = 2;
-  }
-  // rightmost sensor detects black, turn spot left
-  else if ((sensorValue[0] < threshold) && (sensorValue[2]  > threshold) && (sensorValue[3] > threshold) && (sensorValue[5] > threshold)){
-    move(baseSpeed, -baseSpeed);
-    *memory = 1;
-  }
-  // all sensors detect black, stop
-  else if ((sensorValue[0] > threshold) && (sensorValue[1] > threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold) && (sensorValue[4] > threshold) && (sensorValue[5] > threshold)){
-    move(0, 0);
-  }
+    if (sensorValue[0] > threshold && sensorValue[5] < threshold) {
+     moveMotors(-baseSpeed, baseSpeed); // Spot turn Left
+     return;
+    }
+  
+    // Example: Extreme Right (Sensor 5 high, others low)
+    if (sensorValue[5] > threshold && sensorValue[0] < threshold) {
+     moveMotors(baseSpeed, -baseSpeed); // Spot turn Right
+     return;
+    }
+
+    // Example: All sensors black (Stop)
+    bool allBlack = true;
+    for(int i=0; i<6; i++) {
+    if(sensorValue[i] < threshold) allBlack = false;
+    }
+    if (allBlack) {
+        moveMotors(0, 0);
+        return;
+    }
+
+  // --- Normal Line Following (PID) ---
+  int adjustSpeed = PID();
+
+  int leftSpeed = baseSpeed - adjustSpeed;
+  int rightSpeed = baseSpeed + adjustSpeed;
+
+  moveMotors(leftSpeed, rightSpeed);
+
 }
+
 

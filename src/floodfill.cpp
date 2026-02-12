@@ -4,11 +4,8 @@
 #include <algorithm>
 #include <cstdint>
 
-// ==========================================
-// Constants & Definitions
-// ==========================================
 
-const int MAZE_SIZE = 16;
+const int MAZE_SIZE = 8;
 
 // Direction Enums (match your request)
 enum Direction { NORTH = 0, EAST = 1, SOUTH = 2, WEST = 3 };
@@ -29,9 +26,6 @@ struct MazeCell {
     uint8_t walls; // 4-bit wall data
 };
 
-// ==========================================
-// Micromouse Class
-// ==========================================
 
 class Micromouse {
 public:
