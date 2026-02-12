@@ -55,7 +55,7 @@ int IR5 = 33; // Right
 
 // Variables for motor
 const int frequency = 30000; // max frequency is 100kHz
-int baseSpeed = 200;
+int baseSpeed = 100;
 
 // Variables for encoder
 volatile long ENC1_TICKS = 0;
@@ -91,7 +91,7 @@ void move(int a, int b){
   motorSpeed(a, b);
 }
 
-/*int PID(){
+int PID(){
   // weighted average: 2500 is perfect middle of line 
   position = (0*sensorValue[0] + 1000*sensorValue[1] + 2000*sensorValue[2] + 3000*sensorValue[3] + 4000*sensorValue[4] + 5000*sensorValue[5]) / (sensorValue[0] + sensorValue[1] + sensorValue[2] + sensorValue[3] + sensorValue[4] + sensorValue[5]);
   error = target - position;
@@ -109,10 +109,27 @@ void move(int a, int b){
   speed = Kp * error + Kd * (error - lastError);
   lastError = error;
 
+  // Clamp motor speed 
   int leftSpeed = baseSpeed - speed;
+  if (leftSpeed > 255)
+  {
+    leftSpeed = 255;
+    }
+  else if (leftSpeed < 0)
+  {
+    leftSpeed = 0;
+  }
   int rightSpeed = baseSpeed + speed;
+  if (rightSpeed > 255)
+  {
+    rightSpeed = 255;
+  }
+  else if (rightSpeed < 0)
+  {
+    rightSpeed = 0;
+  }
   return leftSpeed, rightSpeed;
-}*/
+}
 
 // Direction function
 void direction()
@@ -122,23 +139,23 @@ void direction()
   // forward case: call PID function
   if ((sensorValue[0] < threshold) && (sensorValue[5] < threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold)){
     //int leftSpeed, rightSpeed = PID();
-    move(baseSpeed, baseSpeed);
+    move(baseSpeed, baseSpeed); // change to PID speed later 
   }
 
   // leftmost sensor detects black, turn spot right
-  else if (sensorValue[0] > threshold && (sensorValue[2] > threshold && sensorValue[3]) > threshold && sensorValue[5] < threshold){
+  else if ((sensorValue[0] > threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold) && (sensorValue[5] < threshold)){
     move(-baseSpeed, baseSpeed);
     yAxis++;
     ENC1_TICKS, ENC2_TICKS = 0;
   }
   // rightmost sensor detects black, turn spot left
-  else if (sensorValue[0] < threshold && sensorValue[2]  > threshold && sensorValue[3] > threshold && sensorValue[5] > threshold){
+  else if ((sensorValue[0] < threshold) && (sensorValue[2]  > threshold) && (sensorValue[3] > threshold) && (sensorValue[5] > threshold)){
     move(baseSpeed, -baseSpeed);
     yAxis--;
     ENC1_TICKS, ENC2_TICKS = 0;
   }
   // all sensors detect black, stop
-  else if (sensorValue[0] > threshold && sensorValue[1] > threshold && sensorValue[2] > threshold && sensorValue[3] > threshold && sensorValue[4] > threshold && sensorValue[5] > threshold){
+  else if ((sensorValue[0] > threshold) && (sensorValue[1] > threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold) && (sensorValue[4] > threshold) && (sensorValue[5] > threshold)){
     move(0, 0);
   }
 }
