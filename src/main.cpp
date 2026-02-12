@@ -40,12 +40,12 @@
 #define ENC2_DIRECT 17
 
 // IR Sensor Pins (Placeholder)
-int IR1 = 36; // Left
-int IR2 = 39; // Left
-int IR3 = 34; // Centre
-int IR4 = 35; // Centre
-int IR5 = 32; // Right
-int IR6 = 33; // Right
+int IR0 = 36; // Left
+int IR1 = 39; // Left
+int IR2 = 34; // Centre
+int IR3 = 35; // Centre
+int IR4 = 32; // Right
+int IR5 = 33; // Right
 
 // LED Pins (6 pins)
 #define RED 
@@ -64,11 +64,11 @@ const int ENC_SLOTS = 20; // Placeholder
 
 // Variable for PID
 long threshold = 1000; // Placeholder 
-int *sensor[6] = {&IR1, &IR2, &IR3, &IR4, &IR5, &IR6};
+int *sensor[6] = {&IR0, &IR1, &IR2, &IR3, &IR4, &IR5};
 long sensorValue[6];
-float Kp = 0;
-float Ki = 0;
-float Kd = 0;
+float Kp = 1.0;
+float Ki = 1.0;
+float Kd = 1.0;
 int error, position, speed, lastError;
 int target = 2500;
 
@@ -91,7 +91,7 @@ void move(int a, int b){
   motorSpeed(a, b);
 }
 
-int PID(){
+/*int PID(){
   // weighted average: 2500 is perfect middle of line 
   position = (0*sensorValue[0] + 1000*sensorValue[1] + 2000*sensorValue[2] + 3000*sensorValue[3] + 4000*sensorValue[4] + 5000*sensorValue[5]) / (sensorValue[0] + sensorValue[1] + sensorValue[2] + sensorValue[3] + sensorValue[4] + sensorValue[5]);
   error = target - position;
@@ -112,7 +112,7 @@ int PID(){
   int leftSpeed = baseSpeed - speed;
   int rightSpeed = baseSpeed + speed;
   return leftSpeed, rightSpeed;
-}
+}*/
 
 // Direction function
 void direction()
@@ -120,25 +120,25 @@ void direction()
   // detect what situation the car is facing 
   // Forward: a = b, Left: a < b, Right: a > b, Backwards: -a = -b
   // forward case: call PID function
-  if ((sensorValue[0] && sensorValue[5]) < threshold && (sensorValue[2] && sensorValue[3]) > threshold){
-    int leftSpeed, rightSpeed = PID();
-    move(leftSpeed, rightSpeed);
+  if ((sensorValue[0] < threshold) && (sensorValue[5] < threshold) && (sensorValue[2] > threshold) && (sensorValue[3] > threshold)){
+    //int leftSpeed, rightSpeed = PID();
+    move(baseSpeed, baseSpeed);
   }
 
   // leftmost sensor detects black, turn spot right
-  else if (sensorValue[0] > threshold && (sensorValue[2] && sensorValue[3]) > threshold && sensorValue[5] < threshold){
+  else if (sensorValue[0] > threshold && (sensorValue[2] > threshold && sensorValue[3]) > threshold && sensorValue[5] < threshold){
     move(-baseSpeed, baseSpeed);
     yAxis++;
     ENC1_TICKS, ENC2_TICKS = 0;
   }
   // rightmost sensor detects black, turn spot left
-  else if (sensorValue[0] < threshold && (sensorValue[2] && sensorValue[3]) > threshold && sensorValue[5] > threshold){
+  else if (sensorValue[0] < threshold && sensorValue[2]  > threshold && sensorValue[3] > threshold && sensorValue[5] > threshold){
     move(baseSpeed, -baseSpeed);
     yAxis--;
     ENC1_TICKS, ENC2_TICKS = 0;
   }
   // all sensors detect black, stop
-  else if ((sensorValue[0] && sensorValue[1] && sensorValue[2] && sensorValue[3] && sensorValue[4] + sensorValue[5]) > threshold){
+  else if (sensorValue[0] > threshold && sensorValue[1] > threshold && sensorValue[2] > threshold && sensorValue[3] > threshold && sensorValue[4] > threshold && sensorValue[5] > threshold){
     move(0, 0);
   }
 }
@@ -186,7 +186,7 @@ void setup() {
   pinMode(IR3, INPUT);
   pinMode(IR4, INPUT);
   pinMode(IR5, INPUT);
-  pinMode(IR6, INPUT);
+  pinMode(IR0, INPUT);
 
 }
 
@@ -195,7 +195,12 @@ void loop() {
   // Constantly reading values from sensor (Add calibration phase)
   for (int i = 0; i < 6; i++){
     sensorValue[i] = analogRead(*sensor[i]);
+  // grid check
+    Serial.print(sensorValue[i]);
+    Serial.print(" ");
+    delay(100);
   }
+  Serial.println("");
 
   direction();
   // Calculate the encoder distance and track grid 
