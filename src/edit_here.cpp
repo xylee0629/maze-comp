@@ -1,10 +1,7 @@
 /* Main code for maze competiton using a modified floodfill algorithm. 
-// apparently bluetooth uses ADC2 pins which has conflict with motor pins :( 
--> added encoder, distance measurement need to calibrate
--> added uTurn function
--> Junction is handled by left hand rule.  currently does not support loop. memory system for turns can help this
--> check if PID works as normal
--> deleted the motor.cpp and motor.h files. Will try to make the code seperate next week
+-> Currently: doing bluetooth 
+-> need to add encoder, link to maze code (get ruler tmr
+// apparently bluetooth uses ADC2 pins which has conflict with motor pins :())
 */
 
 #include <Arduino.h>
