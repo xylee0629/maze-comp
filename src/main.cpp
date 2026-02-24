@@ -8,6 +8,8 @@
 */
 
 #include <Arduino.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 //#include <BluetoothSerial.h>
 
 /*#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
@@ -17,9 +19,9 @@
 BluetoothSerial SerialBT;*/
 
 // TB6612FNG Motor Driver Pins
-#define AIN1 26
-#define AIN2 25
-#define PWMA 27
+#define AIN1 27
+#define AIN2 26
+#define PWMA 25
 #define BIN1 21
 #define BIN2 22
 #define PWMB 23
@@ -70,6 +72,7 @@ void uTurn();
 
 void setup() 
 {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
   /*SerialBT.begin("ESP32"); //Bluetooth device name
   Serial.println("The device started, now you can pair it with bluetooth!");*/
@@ -104,7 +107,7 @@ void loop()
   readSensors();
 
   // Test Motor 
-  setMotorSpeed(100, 100);
+  /*setMotorSpeed(100, 100);
   delay(1000);
   setMotorSpeed(-100, 100);
   delay(1000);
@@ -112,9 +115,9 @@ void loop()
   delay(1000);
   setMotorSpeed(-100, -100);
   delay(1000);
-  setMotorSpeed(0, 0);
+  setMotorSpeed(0, 0);*/
 
-  /*
+  
   // Boolean for left and right junction check
   bool leftJunction = (sensorValues[0] > 600) && (sensorValues[1] > 600);
   bool rightJunction = (sensorValues[4] > 600) && (sensorValues[5] > 600);
@@ -193,7 +196,7 @@ void loop()
   Serial.println(ENC1_TICKS);
   Serial.println(ENC1_TICKS);
   Serial.println(DISTANCE);
-  Serial.println(" ");*/
+  Serial.println(" ");
 }
 
 
