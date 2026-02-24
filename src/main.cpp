@@ -194,7 +194,7 @@ void loop()
   float DISTANCE = AVG_TICKS * CM_PER_TICK;
 
   Serial.println(ENC1_TICKS);
-  Serial.println(ENC1_TICKS);
+  Serial.println(ENC2_TICKS);
   Serial.println(DISTANCE);
   Serial.println(" ");
 }
