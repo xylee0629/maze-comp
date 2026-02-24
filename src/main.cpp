@@ -133,23 +133,20 @@ void loop()
     setMotorSpeed(110, 0);
     lastTurn = 1;
   }
-  else if (leftSensor == 0 && centerSensor == 1 && rightSensor == 0) {
-    // All sensors on line - Move forward
-    stop_motor();
-    isFinished = true;
+  else if (sensorValues[0] > threshold && (sensorValues[2] > threshold|| sensorValues[3] > threshold) && sensorValues[5] > threshold) {
+    // All sensors on line - stop
+    setMotorSpeed(0,0);
   }
-  else if (leftSensor == 1 && centerSensor == 0 && rightSensor == 1){
-    if (lastTurnDirection == 'L') {
-      SHARP_LEFT(); // Use gentle pivot
-    } else if (lastTurnDirection == 'R'){
-      SHARP_RIGHT(); // Use gentle pivot
+  else if (sensorValues[0] < threshold && (sensorValues[2] < threshold|| sensorValues[3] < threshold) && sensorValues[5] < threshold){
+    if (lastTurn == 1) {
+      setMotorSpeed(110, -175); // Use gentle pivot
+    } else if (lastTurn == 2){
+      setMotorSpeed(-110, 175); // Use gentle pivot
     }
     else{
-      FORWARD();
+      setMotorSpeed(110, 175);
   }
   }
-  } 
-}*/
 
   // Test Motor 
   /*setMotorSpeed(100, 100);
