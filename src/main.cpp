@@ -28,19 +28,19 @@ BluetoothSerial SerialBT;*/
 #define STBY 4
 
 // Encoder Pins 
-#define ENC1 18
-#define ENC1_DIRECT 19
-#define ENC2 16
-#define ENC2_DIRECT 17
+#define ENC1 16
+#define ENC1_DIRECT 17
+#define ENC2 18
+#define ENC2_DIRECT 19
 
 // IR Sensor Pins 
-int IR0 = 33; // Left33
+/*int IR0 = 33; // Left33
 int IR1 = 32; // Left32
 int IR2 = 35; // Centre35
 int IR3 = 34; // Centre34
 int IR4 = 39; // Right39
-int IR5 = 36; // Right 36
-int SENSOR_PINS[6] = {IR0, IR1, IR2, IR3, IR4, IR5};
+int IR5 = 36; // Right 36*/
+int SENSOR_PINS[6] = {33, 32, 35, 34, 39, 36};
 
 // Control Variables 
 const int BASE_SPEED = 90;
