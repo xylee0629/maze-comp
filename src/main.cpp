@@ -43,11 +43,12 @@ int IR5 = 36; // Right 36*/
 int SENSOR_PINS[6] = {33, 32, 35, 34, 39, 36};
 
 // Control Variables 
-const int BASE_SPEED = 90;
-const int TURN_SPEED = 100;    
+const int BASE_SPEED = 120;
+const int TURN_SPEED = 150;    
 const int ALIGN_TIME = 250; // Time to drive forward BEFORE turning (Center the wheels)
-const int BLIND_TURN_TIME = 300; // Time to spin blind (ignore sensors) to clear the old line
+const int BLIND_TURN_TIME = 500; // Time to spin blind (ignore sensors) to clear the old line
 const int CLEARANCE_TIME = 200; // Time to drive forward AFTER turning (Escape the junction)
+int threshold = 1000;
 
 int sensorValues[6];
 int lastError = 0;
@@ -106,6 +107,50 @@ void loop()
   // Read all sensors
   readSensors();
 
+  if (sensorValues[0] < threshold && (sensorValues[2] > threshold|| sensorValues[3]> threshold) && sensorValues[5] < threshold) {
+    // Center sensor on black line - Move forward
+      setMotorSpeed(110, 175);
+
+    }
+  else if (sensorValues[0] > threshold && (sensorValues[2] < threshold|| sensorValues[3]< threshold) && sensorValues[5] < threshold) {// 1 0 0 {
+    // Left sensor on line - Turn right
+    setMotorSpeed(0, 175);
+    lastTurn = 2;
+  }
+  else if (sensorValues[0] < threshold && (sensorValues[2] < threshold|| sensorValues[3] < threshold) && sensorValues[5] > threshold) {
+    // Right sensor on line - Turn left
+    setMotorSpeed(110, 0);
+    lastTurn = 1;
+  }
+
+  else if (sensorValues[0] > threshold && (sensorValues[2] > threshold|| sensorValues[3] > threshold) && sensorValues[5] < threshold) {
+    // Left and center on line - Sharp left
+    setMotorSpeed(0, 175);
+    lastTurn = 2;
+  }
+  else if (sensorValues[0] < threshold && (sensorValues[2] > threshold|| sensorValues[3] > threshold) && sensorValues[5] > threshold) {
+    // Right and center on line - Sharp right
+    setMotorSpeed(110, 0);
+    lastTurn = 1;
+  }
+  else if (leftSensor == 0 && centerSensor == 1 && rightSensor == 0) {
+    // All sensors on line - Move forward
+    stop_motor();
+    isFinished = true;
+  }
+  else if (leftSensor == 1 && centerSensor == 0 && rightSensor == 1){
+    if (lastTurnDirection == 'L') {
+      SHARP_LEFT(); // Use gentle pivot
+    } else if (lastTurnDirection == 'R'){
+      SHARP_RIGHT(); // Use gentle pivot
+    }
+    else{
+      FORWARD();
+  }
+  }
+  } 
+}*/
+
   // Test Motor 
   /*setMotorSpeed(100, 100);
   delay(1000);
@@ -119,7 +164,7 @@ void loop()
 
   
   // Boolean for left and right junction check
-  bool leftJunction = (sensorValues[0] > 600) && (sensorValues[1] > 600);
+  /*bool leftJunction = (sensorValues[0] > 600) && (sensorValues[1] > 600);
   bool rightJunction = (sensorValues[4] > 600) && (sensorValues[5] > 600);
   bool Straight = (sensorValues[2] > 600) && (sensorValues[3] > 600);
 
@@ -127,7 +172,8 @@ void loop()
   if (leftJunction) {
     sharpTurn(true); // Turn Left
     lastTurn = 1;
-    return;
+    //Serial.println("left");
+
   }
   else if (Straight) {
     // No junction detected. Perform PID calculation and motor
@@ -137,14 +183,16 @@ void loop()
   
     setMotorSpeed(speedLeft, speedRight);
     lastTurn = 0;
-    return;
+    //Serial.print("Straight");
+
   }
   else if (rightJunction) {
     sharpTurn(false); // Turn Right
     lastTurn = 2;
-    return;
+    //Serial.println("right");
+  
   }
-  else {
+  /*else {
     delay(50);
     readSensors();
     bool stillLost = true;
@@ -156,8 +204,8 @@ void loop()
     {
       uTurn();
       lastTurn = 3;
+      Serial.println("UTurn");
     }
-    return;
   }
 
   // Check if the car is on the line 
@@ -186,17 +234,16 @@ void loop()
 
   setMotorSpeed(BASE_SPEED, BASE_SPEED);
   delay(CLEARANCE_TIME);
-    return;
-  }
+  }*/
 
   float AVG_TICKS = (ENC1_TICKS + ENC2_TICKS) / 2.0;
   float CM_PER_TICK = PI * 3.4 / ENC_SLOTS;
   float DISTANCE = AVG_TICKS * CM_PER_TICK;
 
-  Serial.println(ENC1_TICKS);
+  /*Serial.println(ENC1_TICKS);
   Serial.println(ENC2_TICKS);
   Serial.println(DISTANCE);
-  Serial.println(" ");
+  Serial.println(" ");*/
 }
 
 
@@ -225,7 +272,10 @@ void readSensors()
   for (int i = 0; i < 6; i++)
   {
     sensorValues[i] = analogRead(SENSOR_PINS[i]);
+    Serial.print(sensorValues[i]);
+    Serial.print(" ");
   }
+  Serial.println("");
 }
 
 void setMotorSpeed(int left, int right)
@@ -241,7 +291,7 @@ void setMotorSpeed(int left, int right)
   else 
   {
     digitalWrite(AIN1, LOW);
-    digitalWrite(AIN2, HIGH);
+    digitalWrite(AIN2, LOW);
   }
   analogWrite(PWMA, left);
 
@@ -254,7 +304,7 @@ void setMotorSpeed(int left, int right)
   else 
   {
     digitalWrite(BIN1, LOW);
-    digitalWrite(BIN2, HIGH);
+    digitalWrite(BIN2, LOW);
   }
   analogWrite(PWMB, right);
 }
