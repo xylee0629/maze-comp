@@ -20,10 +20,10 @@ BluetoothSerial SerialBT;*/
 #define AIN1 26
 #define AIN2 25
 #define PWMA 27
-#define BIN1 14
-#define BIN2 12
-#define PWMB 13 
-#define STBY 5
+#define BIN1 21
+#define BIN2 22
+#define PWMB 23
+#define STBY 4
 
 // Encoder Pins 
 #define ENC1 18
@@ -103,21 +103,18 @@ void loop()
   // Read all sensors
   readSensors();
 
-  /* Serial bluetooth 
-  if (Serial.available()) {
-    for (int i = 0; i < 6; i++)
-    {
-      SerialBT.print("IR");
-      SerialBT.print(i);
-      SerialBT.print(": ");
-      SerialBT.print(sensorValues[i]);
-      SerialBT.print(", ");
-    }
-    SerialBT.println();
-  }
-  delay(20);*/
+  // Test Motor 
+  setMotorSpeed(100, 100);
+  delay(1000);
+  setMotorSpeed(-100, 100);
+  delay(1000);
+  setMotorSpeed(100, -100);
+  delay(1000);
+  setMotorSpeed(-100, -100);
+  delay(1000);
+  setMotorSpeed(0, 0);
 
-
+  /*
   // Boolean for left and right junction check
   bool leftJunction = (sensorValues[0] > 600) && (sensorValues[1] > 600);
   bool rightJunction = (sensorValues[4] > 600) && (sensorValues[5] > 600);
@@ -195,7 +192,8 @@ void loop()
 
   Serial.println(ENC1_TICKS);
   Serial.println(ENC1_TICKS);
-  Serial.println(" ");
+  Serial.println(DISTANCE);
+  Serial.println(" ");*/
 }
 
 
