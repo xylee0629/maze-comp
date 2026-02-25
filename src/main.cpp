@@ -50,6 +50,9 @@ const int BLIND_TURN_TIME = 500; // Time to spin blind (ignore sensors) to clear
 const int CLEARANCE_TIME = 200; // Time to drive forward AFTER turning (Escape the junction)
 int threshold = 1000;
 
+int intersectionDelay = 150; 
+int blindTurnDelay = 200;
+
 int sensorValues[6];
 int lastError = 0;
 const int targetPosition = 2500;
@@ -107,140 +110,98 @@ void loop()
   // Read all sensors
   readSensors();
 
-  if (sensorValues[0] < threshold && (sensorValues[2] > threshold|| sensorValues[3]> threshold) && sensorValues[5] < threshold) {
-    // Center sensor on black line - Move forward
-      setMotorSpeed(110, 175);
+  // Create easy-to-read boolean variables for our sensor states
+  bool leftSensed = (sensorValues[0] > threshold);
+  bool rightSensed = (sensorValues[5] > threshold);
+  bool centerSensed = (sensorValues[2] > threshold || sensorValues[3] > threshold);
 
+  // ==========================================
+  // PRIORITY 1: LEFT TURN (Take immediately)
+  // ==========================================
+  if (leftSensed) {
+    // 1. Move forward slightly to align wheels with the intersection center
+    setMotorSpeed(110, 175);
+    delay(150); // <-- TUNE THIS: Time to roll forward
+    
+    // 2. Start a hard left turn
+    setMotorSpeed(0, 175); // (Or use -110, 175 for a tighter pivot)
+    lastTurn = 2;
+    delay(200); // <-- TUNE THIS: Blind turn time to escape the current line
+
+    // 3. Keep turning left until the center sensors lock onto the new line
+    readSensors();
+    while (!(sensorValues[2] > threshold || sensorValues[3] > threshold)) {
+      setMotorSpeed(0, 175);
+      readSensors();
     }
-  else if (sensorValues[0] > threshold && (sensorValues[2] < threshold|| sensorValues[3]< threshold) && sensorValues[5] < threshold) {// 1 0 0 {
-    // Left sensor on line - Turn right
-    setMotorSpeed(0, 175);
-    lastTurn = 2;
-  }
-  else if (sensorValues[0] < threshold && (sensorValues[2] < threshold|| sensorValues[3] < threshold) && sensorValues[5] > threshold) {
-    // Right sensor on line - Turn left
-    setMotorSpeed(110, 0);
-    lastTurn = 1;
   }
 
-  else if (sensorValues[0] > threshold && (sensorValues[2] > threshold|| sensorValues[3] > threshold) && sensorValues[5] < threshold) {
-    // Left and center on line - Sharp left
-    setMotorSpeed(0, 175);
-    lastTurn = 2;
+  // ==========================================
+  // PRIORITY 2: GO STRAIGHT (Line Following)
+  // ==========================================
+  // If no left turn exists, but the center is on the line, follow it.
+  // This automatically ignores right turns if a straight path exists!
+  else if (centerSensed) {
+    
+    // Micro-adjustments to stay centered on the straight path
+    if (sensorValues[2] > threshold && sensorValues[3] > threshold) {
+      setMotorSpeed(110, 175); // Perfectly centered
+    }
+    else if (sensorValues[2] > threshold && sensorValues[3] < threshold) {
+      setMotorSpeed(0, 175); // Drifting off, adjust left
+      lastTurn = 2;
+    }
+    else if (sensorValues[2] < threshold && sensorValues[3] > threshold) {
+      setMotorSpeed(110, 0); // Drifting off, adjust right
+      lastTurn = 1;
+    }
   }
-  else if (sensorValues[0] < threshold && (sensorValues[2] > threshold|| sensorValues[3] > threshold) && sensorValues[5] > threshold) {
-    // Right and center on line - Sharp right
+
+  // ==========================================
+  // PRIORITY 3: RIGHT TURN (Only if no Left & no Straight)
+  // ==========================================
+  else if (rightSensed && !leftSensed && !centerSensed) {
+    // 1. Move forward slightly to align wheels
+    setMotorSpeed(110, 175);
+    delay(150); // <-- TUNE THIS: Time to roll forward
+
+    // 2. Start a hard right turn
     setMotorSpeed(110, 0);
     lastTurn = 1;
+    delay(200); // <-- TUNE THIS: Blind turn time
+
+    // 3. Keep turning right until center sensors find the line
+    readSensors();
+    while (!(sensorValues[2] > threshold || sensorValues[3] > threshold)) {
+      setMotorSpeed(110, 0);
+      readSensors();
+    }
   }
-  else if (sensorValues[0] > threshold && (sensorValues[2] > threshold|| sensorValues[3] > threshold) && sensorValues[5] > threshold) {
-    // All sensors on line - stop
-    setMotorSpeed(0,0);
-  }
-  else if (sensorValues[0] < threshold && (sensorValues[2] < threshold|| sensorValues[3] < threshold) && sensorValues[5] < threshold){
+
+  // ==========================================
+  // PRIORITY 4: DEAD END (U-TURN)
+  // ==========================================
+  else if (!leftSensed && !centerSensed && !rightSensed) {
+    // Pivot around in place
     if (lastTurn == 1) {
-      setMotorSpeed(110, -175); // Use gentle pivot
-    } else if (lastTurn == 2){
-      setMotorSpeed(-110, 175); // Use gentle pivot
+      setMotorSpeed(110, -175); // Pivot right
+    } else {
+      setMotorSpeed(-110, 175); // Pivot left
     }
-    else{
-      setMotorSpeed(110, 175);
-  }
-  }
-
-  // Test Motor 
-  /*setMotorSpeed(100, 100);
-  delay(1000);
-  setMotorSpeed(-100, 100);
-  delay(1000);
-  setMotorSpeed(100, -100);
-  delay(1000);
-  setMotorSpeed(-100, -100);
-  delay(1000);
-  setMotorSpeed(0, 0);*/
-
-  
-  // Boolean for left and right junction check
-  /*bool leftJunction = (sensorValues[0] > 600) && (sensorValues[1] > 600);
-  bool rightJunction = (sensorValues[4] > 600) && (sensorValues[5] > 600);
-  bool Straight = (sensorValues[2] > 600) && (sensorValues[3] > 600);
-
-  // If true, perform sharp turns including T junctions
-  if (leftJunction) {
-    sharpTurn(true); // Turn Left
-    lastTurn = 1;
-    //Serial.println("left");
-
-  }
-  else if (Straight) {
-    // No junction detected. Perform PID calculation and motor
-    int correction = calculatePID();
-    int speedLeft = constrain(BASE_SPEED + correction, 0, 180);
-    int speedRight = constrain(BASE_SPEED - correction, 0, 180);
-  
-    setMotorSpeed(speedLeft, speedRight);
-    lastTurn = 0;
-    //Serial.print("Straight");
-
-  }
-  else if (rightJunction) {
-    sharpTurn(false); // Turn Right
-    lastTurn = 2;
-    //Serial.println("right");
-  
-  }
-  /*else {
+    
+    // You may want to add a small delay here so it clears the dead end 
+    // before the loop restarts and it checks the sensors again.
     delay(50);
-    readSensors();
-    bool stillLost = true;
-    for (int i = 0; i < 6; i++)
-    {
-      if (sensorValues[i] > 500) stillLost = false;
-    }
-    if (stillLost)
-    {
-      uTurn();
-      lastTurn = 3;
-      Serial.println("UTurn");
-    }
   }
-
-  // Check if the car is on the line 
-  bool onLine = false;
-  for(int i = 0; i < 6; i++) 
-  {
-    if(sensorValues[i] > 500) onLine = true;
-  }
-
-  // If not on the line, stop
-  if(!onLine) 
-  {
-    setMotorSpeed(-TURN_SPEED, TURN_SPEED);
-    delay(6000); // turn for longer for blind turn
-
-    long START_TIME = millis();
-  while(true)
-  {
-    readSensors();
-    if (sensorValues[2] > 600 || sensorValues[3] > 600)
-    {
-      break;
-    }
-    if (millis() - START_TIME > 2000) break;
-  }
-
-  setMotorSpeed(BASE_SPEED, BASE_SPEED);
-  delay(CLEARANCE_TIME);
-  }*/
 
   float AVG_TICKS = (ENC1_TICKS + ENC2_TICKS) / 2.0;
   float CM_PER_TICK = PI * 3.4 / ENC_SLOTS;
   float DISTANCE = AVG_TICKS * CM_PER_TICK;
 
-  /*Serial.println(ENC1_TICKS);
+  Serial.println(ENC1_TICKS);
   Serial.println(ENC2_TICKS);
   Serial.println(DISTANCE);
-  Serial.println(" ");*/
+  Serial.println(" ");
 }
 
 
