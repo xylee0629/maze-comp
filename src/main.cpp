@@ -151,23 +151,42 @@ readSensors();
     whiteCount = 0; 
   }
 
- bool leftJunction = (sensorValues[0] > THRESHOLD) && (sensorValues[1] > THRESHOLD);
+// =========================================================
+  // PRIORITY 2: JUNCTION CHECK (Active Look Ahead)
+  // =========================================================
+  bool leftJunction = (sensorValues[0] > THRESHOLD) && (sensorValues[1] > THRESHOLD);
   bool rightJunction = (sensorValues[4] > THRESHOLD) && (sensorValues[5] > THRESHOLD);
 
   if (leftJunction || rightJunction) {
     setMotorSpeed(0, 0); delay(50); // Brake
 
-    // Push past the horizontal line to read the paths ahead
-    setMotorSpeed(L_BASE, R_BASE);
-    delay(ALIGN_TIME); 
-
-    setMotorSpeed(0, 0);
-    readSensors();
-
+    // --- STEP 1: INITIAL SNAPSHOT ---
+    // Record what the sides look like right now, before we move
     bool canGoLeft = leftJunction; 
     bool canGoRight = rightJunction;
+
+    // --- STEP 2: ACTIVE PUSH ---
+    // Drive forward until the extreme outer sensors leave the horizontal tape
+    setMotorSpeed(L_BASE, R_BASE);
+    long ALIGN_START = millis();
+    while(millis() - ALIGN_START < 400) { // 400ms max safety timeout
+      readSensors();
+      if (sensorValues[0] < THRESHOLD && sensorValues[5] < THRESHOLD) {
+        break; // We successfully cleared the horizontal bar!
+      }
+    }
+    
+    // Optional: A tiny 20ms push here ensures the pivot point of your tires 
+    // is perfectly aligned with the intersection.
+    delay(20); 
+
+    // --- STEP 3: SECOND SNAPSHOT ---
+    // Now that the horizontal tape is behind us, what do the center sensors see?
+    setMotorSpeed(0, 0);
+    readSensors();
     bool canGoStraight = (sensorValues[2] > THRESHOLD || sensorValues[3] > THRESHOLD);
 
+    // --- STEP 4: DECISION LOGIC ---
     int availablePaths = 0;
     if (canGoLeft) availablePaths++;
     if (canGoRight) availablePaths++;
@@ -175,7 +194,7 @@ readSensors();
 
     bool isDecisionPoint = (availablePaths > 1);
 
-    // Left-Hand Rule Execution
+    // Execute Left-Hand Rule
     if (canGoLeft) {
       if (isDecisionPoint) recordTurn('L');
       sharpTurn(true); 
@@ -191,7 +210,6 @@ readSensors();
       return;
     }
   }
-
   // --- 2. STEPPED LINE FOLLOWING (No PID!) ---
   
   // CASE A: Perfect Center (Sensors 2 or 3 are black)
