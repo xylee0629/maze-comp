@@ -8,21 +8,21 @@
 
 // TWEAKABLE VARIABLES
 // --- JUNCTION HANDLING (ENCODER DISTANCE) ---
-const float JUNCTION_PUSH_CM = 14; // Distance from IR sensors to wheel axle in cm
-const float TURN_90_CM = 9;       // (Wheelbase_in_cm * 3.1415) / 4
+const float JUNCTION_PUSH_CM = 13; // Distance from IR sensors to wheel axle in cm; Original: 14
+const float TURN_90_CM = 10;       // (Wheelbase_in_cm * 3.1415) / 4; Original: 9
 // --- CALIBRATED SPEEDS ---
-const int L_BASE  = 250;  // Matched from working line-follower test
-const int R_BASE  = 250; 
-const int L_PIVOT = 250;
-const int R_PIVOT = 250;
-const int SEEK_SPEED = 250; // Affects both Pivot at junction and U Turn time when seeking the line 
+const int L_BASE  = 255;  // Matched from working line-follower test
+const int R_BASE  = 255; 
+const int L_PIVOT = 255;
+const int R_PIVOT = 255;
+const int SEEK_SPEED = 255; // Affects both Pivot at junction and U Turn time when seeking the line 
 // --- PID CONTROL SETTINGS ---
-float Kp = 0.08;  // Proportional: How hard to steer based on current error
-float Kd = 0.5;   // Derivative: How hard to resist sudden changes (dampening)
+float Kp = 0.10;  // Proportional: How hard to steer based on current error
+float Kd = 0.4;   // Derivative: How hard to resist sudden changes (dampening)
 int lastError = 0;
 const int WHITE_VALUE = 300; // White Background Sensor Values  for PID calc
 // --- IR SENSOR DETECTION THRESHOLD ---
-const int THRESHOLD_LINE     = 750;  // Sensors 1-4: line following
+const int THRESHOLD_LINE     = 700;  // Sensors 1-4: line following
 const int THRESHOLD_JUNCTION = 700;  // Sensors 0 & 5: junction detection
 // --- TIME SETTINGS ---
 const int JUNCTION_PUSH_TIMEOUT = 3000; // how much time checked for robot to consider failed front movement at junction
@@ -334,8 +334,8 @@ if (digitalRead(BTN_START) == LOW) {
   // --- NEW: Dynamic Auto-Braking ---
   // If the error is high, subtract speed from the base throttle
   // You can tune the '0.05' multiplier to make it brake harder on curves
-  int currentThrottleL = L_BASE - abs(error * 0.05); 
-  int currentThrottleR = R_BASE - abs(error * 0.05);
+  int currentThrottleL = L_BASE - abs(error * 0.02); 
+  int currentThrottleR = R_BASE - abs(error * 0.02);
   
   // Prevent the throttle from dropping too low
   if (currentThrottleL < 100) currentThrottleL = 100;
@@ -441,8 +441,8 @@ void encoderPivot(bool leftTurn) {
     delay(1);
   }
 
-  setMotorSpeed(0, 0);
-  delay(50); // Let robot physically settle before sensing
+  /*setMotorSpeed(0, 0);
+  delay(50);*/ // Let robot physically settle before sensing
 
   Serial.println("--- PHASE 1 DONE: Seeking line ---");
 
@@ -452,13 +452,21 @@ void encoderPivot(bool leftTurn) {
   while (true) {
     readSensors();
 
-    // Centre sensors confirm we're on the line — stop immediately
-    if (sensorValues[2] > THRESHOLD_LINE || sensorValues[3] > THRESHOLD_LINE) {
-      Serial.println("--- LINE FOUND ---");
-      break;
+   // --- DIRECTION-AWARE CENTERING ---
+    if (leftTurn) {
+      // Robot spins CCW. Line sweeps 0 -> 1 -> 2 -> 3. Wait for the trailing sensor!
+      if (sensorValues[3] > THRESHOLD_LINE) {
+        Serial.println("--- LINE FOUND (Centered Left) ---");
+        break;
+      }
+    } else {
+      // Robot spins CW. Line sweeps 5 -> 4 -> 3 -> 2. Wait for the trailing sensor!
+      if (sensorValues[2] > THRESHOLD_LINE) {
+        Serial.println("--- LINE FOUND (Centered Right) ---");
+        break;
+      }
     }
 
-    // Safety timeout — if line not found within 1.5s something is wrong
     if (millis() - seekStart > PIVOT_TURN_TIMEOUT) {
       Serial.println("WARNING: Seek timed out");
       break;
@@ -733,7 +741,7 @@ void executeUTurn() {
   }
 
   setMotorSpeed(0, 0);
-  delay(50); 
+  delay(1); 
 
   // ==========================================================
   // PHASE 3: Slow seek to lock back onto the line
@@ -761,7 +769,7 @@ void executeUTurn() {
   }
 
   setMotorSpeed(0, 0);
-  delay(30);
+  delay(1);
   setMotorSpeed(L_BASE, R_BASE); // Re-enter line
   Serial.println("--- U-TURN FINISHED ---");
 }
