@@ -11,11 +11,11 @@
 const float JUNCTION_PUSH_CM = 14; // Distance from IR sensors to wheel axle in cm
 const float TURN_90_CM = 9;       // (Wheelbase_in_cm * 3.1415) / 4
 // --- CALIBRATED SPEEDS ---
-const int L_BASE  = 180;  // Matched from working line-follower test
-const int R_BASE  = 180; 
-const int L_PIVOT = 200;
-const int R_PIVOT = 200;
-const int SEEK_SPEED = 80; // Affects both Pivot at junction and U Turn time when seeking the line 
+const int L_BASE  = 250;  // Matched from working line-follower test
+const int R_BASE  = 250; 
+const int L_PIVOT = 250;
+const int R_PIVOT = 250;
+const int SEEK_SPEED = 250; // Affects both Pivot at junction and U Turn time when seeking the line 
 // --- PID CONTROL SETTINGS ---
 float Kp = 0.08;  // Proportional: How hard to steer based on current error
 float Kd = 0.5;   // Derivative: How hard to resist sudden changes (dampening)
@@ -484,8 +484,6 @@ void encoderPivot(bool leftTurn) {
 // ------------------------------------------------------------
 void handleJunction(bool leftDetected, bool rightDetected) {
   Serial.println("\n>>> JUNCTION DETECTED <<<");
-  setMotorSpeed(0, 0);
-  delay(50);
 
   portDISABLE_INTERRUPTS();
   leftTicks  = 0;
@@ -533,7 +531,7 @@ while (true) {
   } 
 
   // Robot is now centred at the intersection
-  setMotorSpeed(0, 0); delay(50);
+  setMotorSpeed(0, 0); delay(1);
   readSensors();
 
   // ======================================================
@@ -574,7 +572,7 @@ if (allBlackBox) {
   }
 
   // Robot is now centred at the intersection — safe to check straight
-  setMotorSpeed(0, 0); delay(50);
+  setMotorSpeed(0, 0); delay(1);
   readSensors();
   canGoStraight = (sensorValues[2] > THRESHOLD_LINE || sensorValues[3] > THRESHOLD_LINE);
 
