@@ -7,6 +7,12 @@
 // ============================================================
 // TWEAKABLE VARIABLES
 // ============================================================
+#define MAZE_SIZE 6 // 5x5 grid (Coordinates 0 to 4)
+// --- MAZE COORDINATES ---
+const int START_X = 0; // Robot's starting X coordinate
+const int START_Y = 0; // Robot's starting Y coordinate
+const int GOAL_X  = MAZE_SIZE - 1; // Target X coordinate for the finish box
+const int GOAL_Y  = MAZE_SIZE - 1; // Target Y coordinate for the finish box
 
 // --- GRID & JUNCTION HANDLING ---
 const float GRID_CELL_CM = 25.0;   // Distance of ONE full maze square (center to center)
@@ -20,7 +26,7 @@ const int L_DASH  = 150;  // Maximum speed for Dash Mode (Speedrun)
 const int R_DASH  = 150;
 const int L_PIVOT = 200;
 const int R_PIVOT = 200;
-const int SEEK_SPEED = 80; 
+const int SEEK_SPEED = 120; 
 
 // --- PID CONTROL SETTINGS ---
 float Kp = 0.08;  
@@ -30,7 +36,7 @@ const int WHITE_VALUE = 300;
 
 // --- IR SENSOR DETECTION THRESHOLD ---
 const int THRESHOLD_LINE     = 750;  // Sensors 1-4: line following
-const int THRESHOLD_JUNCTION = 750;  // Sensors 0 & 5: junction detection
+const int THRESHOLD_JUNCTION = 700;  // Sensors 0 & 5: junction detection
 
 // --- TIME SETTINGS ---
 const int JUNCTION_PUSH_TIMEOUT = 3000; 
@@ -81,20 +87,29 @@ int sensorValues[6];
 // ============================================================
 // FLOODFILL MEMORY & GRID SETTINGS
 // ============================================================
-#define MAZE_SIZE 5 // 9x9 grid (Coordinates 0 to 8)
+// ============================================================
+// FLOODFILL MEMORY & GRID SETTINGS
+// ============================================================
 
-byte walls[MAZE_SIZE][MAZE_SIZE];     // Bitmask for walls: 1=N, 2=E, 4=S, 8=W
-int distances[MAZE_SIZE][MAZE_SIZE];  // Distance to the current goal
+// --- NEW BFS DIRECTIONAL ARRAYS ---
+// Compass: 0=North, 1=East, 2=South, 3=West
+const byte DIR_WALL[4] = {1, 2, 4, 8}; 
+const int  DIR_DX[4]   = {0, 1, 0, -1};
+const int  DIR_DY[4]   = {1, 0, -1, 0};
 
-int posX = 0; // Robot's physical X coordinate
-int posY = 0; // Robot's physical Y coordinate
+byte walls[MAZE_SIZE][MAZE_SIZE];     
+int distances[MAZE_SIZE][MAZE_SIZE]; 
+// ...
+
+int posX = START_X; // Robot's physical X coordinate
+int posY = START_Y; // Robot's physical Y coordinate
 
 // Compass: 0 = North (+Y), 1 = East (+X), 2 = South (-Y), 3 = West (-X)
 int heading = 0; 
 
 // Target tracking for multiple runs
-int targetX = 4; 
-int targetY = 4; 
+int targetX = GOAL_X; 
+int targetY = GOAL_Y; 
 
 // --- MAZE STATE ---
 int  blackBoxCount    = 0;       
@@ -174,10 +189,11 @@ void loop() {
       portENABLE_INTERRUPTS();
       
       blackBoxCount = 0; currentlyOnBox = false;
-      posX = 0; posY = 0; heading = 0;
+      posX = START_X; posY = START_Y; heading = 0;
       
       if (runMode == 0) {
         Serial.println("--- EXPLORATION STARTED ---");
+        targetX = GOAL_X; targetY = GOAL_Y;
         initMaze(); 
       } else {
         Serial.println("--- DASH STARTED ---");
@@ -261,11 +277,21 @@ void loop() {
   if (curL >= targetPhantomL || curR >= targetPhantomR) {
     Serial.println("\n>>> PHANTOM JUNCTION (Straight Line Node) <<<");
 
-    // 1. Arrive at node: Update Coordinate
-    if (heading == 0 && posY < MAZE_SIZE - 1) posY++;
-    if (heading == 1 && posX < MAZE_SIZE - 1) posX++;
-    if (heading == 2 && posY > 0)             posY--;
-    if (heading == 3 && posX > 0)             posX--;
+    // 1. Arrive at node: Update Coordinate (Uncapped!)
+    if (heading == 0) posY++;
+    if (heading == 1) posX++;
+    if (heading == 2) posY--;
+    if (heading == 3) posX--;
+
+    // --- EMERGENCY BOUNDARY STOP ---
+    if (posX < 0 || posX >= MAZE_SIZE || posY < 0 || posY >= MAZE_SIZE) {
+      setMotorSpeed(0, 0); isRunning = false;   
+      Serial.println("\n====================================");
+      Serial.printf("[CRITICAL ERROR] PHANTOM DROVE OFF MAP!\n");
+      Serial.printf("Invalid Coordinate: (%d, %d)\n", posX, posY);
+      Serial.println("====================================");
+      while (true) { digitalWrite(LED_MODE, HIGH); delay(100); digitalWrite(LED_MODE, LOW); delay(100); }
+    }
 
     // 2. Check if we hit the goal via a phantom straight!
     if (posX == targetX && posY == targetY) {
@@ -274,8 +300,11 @@ void loop() {
       for (int f = 0; f < 6; f++) { digitalWrite(LED_MODE, f % 2); delay(200); }
       digitalWrite(LED_MODE, (runMode == 1) ? HIGH : LOW);
 
-      if (targetX == 4) { targetX = 0; targetY = 0; }
-      else              { targetX = 4; targetY = 4; }
+      if (targetX == GOAL_X && targetY == GOAL_Y) { 
+        targetX = START_X; targetY = START_Y; 
+      } else { 
+        targetX = GOAL_X; targetY = GOAL_Y; 
+      }
       floodFill(); printMaze();
       return;
     }
@@ -353,8 +382,9 @@ void initMaze() {
     }
   }
   
-  walls[0][0] |= 8; // Start Box Left wall
-  walls[0][0] |= 2; // Start Box Right wall
+  // Use dynamically mapped Starting Coordinates
+  walls[START_X][START_Y] |= 8; // Start Box Left wall
+  walls[START_X][START_Y] |= 2; // Start Box Right wall
 }
 
 void updateWalls(bool leftOpen, bool straightOpen, bool rightOpen) {
@@ -365,33 +395,55 @@ void updateWalls(bool leftOpen, bool straightOpen, bool rightOpen) {
   else if (heading == 2) { pathS = straightOpen; pathW = rightOpen;    pathE = leftOpen;     pathN = true; }
   else if (heading == 3) { pathW = straightOpen; pathN = rightOpen;    pathS = leftOpen;     pathE = true; }
 
-  if (!pathN) walls[posX][posY] |= 1;
-  if (!pathE) walls[posX][posY] |= 2;
-  if (!pathS) walls[posX][posY] |= 4;
-  if (!pathW) walls[posX][posY] |= 8;
+  // Symmetrical Wall Writing
+  if (!pathN) { walls[posX][posY] |= 1; if (posY < MAZE_SIZE - 1) walls[posX][posY+1] |= 4; }
+  if (!pathE) { walls[posX][posY] |= 2; if (posX < MAZE_SIZE - 1) walls[posX+1][posY] |= 8; }
+  if (!pathS) { walls[posX][posY] |= 4; if (posY > 0)         walls[posX][posY-1] |= 1; }
+  if (!pathW) { walls[posX][posY] |= 8; if (posX > 0)         walls[posX-1][posY] |= 2; }
 }
 
 void floodFill() {
-  bool mapUpdated = true;
-  while (mapUpdated) {
-    mapUpdated = false;
-    for (int x = 0; x < MAZE_SIZE; x++) {
-      for (int y = 0; y < MAZE_SIZE; y++) {
-        if (x == targetX && y == targetY) {
-            distances[x][y] = 0; 
-            continue; 
-        }
+  // 1. Reset all distances to 255 (Unreachable)
+  for (int x = 0; x < MAZE_SIZE; x++) {
+    for (int y = 0; y < MAZE_SIZE; y++) {
+      distances[x][y] = 255;
+    }
+  }
 
-        int minNeighbor = 999;
-        if (!(walls[x][y] & 1)) minNeighbor = min(minNeighbor, distances[x][y+1]);
-        if (!(walls[x][y] & 2)) minNeighbor = min(minNeighbor, distances[x+1][y]);
-        if (!(walls[x][y] & 4)) minNeighbor = min(minNeighbor, distances[x][y-1]);
-        if (!(walls[x][y] & 8)) minNeighbor = min(minNeighbor, distances[x-1][y]);
+  // 2. Simple array-based queue (safe on ESP32 SRAM)
+  int qx[MAZE_SIZE * MAZE_SIZE];
+  int qy[MAZE_SIZE * MAZE_SIZE];
+  int head = 0, tail = 0;
 
-        if (distances[x][y] != minNeighbor + 1) {
-          distances[x][y] = minNeighbor + 1;
-          mapUpdated = true;
-        }
+  // 3. Seed the dynamic target (Goal or Start Box)
+  distances[targetX][targetY] = 0;
+  qx[tail] = targetX;
+  qy[tail] = targetY;
+  tail++;
+
+  // 4. Run the Breadth-First Search
+  while (head < tail) {
+    int cx = qx[head];
+    int cy = qy[head];
+    head++;
+
+    // Check all 4 compass directions
+    for (int d = 0; d < 4; d++) {
+      // Skip if a wall blocks this specific direction
+      if (walls[cx][cy] & DIR_WALL[d]) continue;
+
+      int nx = cx + DIR_DX[d];
+      int ny = cy + DIR_DY[d];
+
+      // Skip if the path leads out of bounds
+      if (nx < 0 || nx >= MAZE_SIZE || ny < 0 || ny >= MAZE_SIZE) continue;
+
+      // Only update and queue if we found a strictly shorter path
+      if (distances[nx][ny] > distances[cx][cy] + 1) {
+        distances[nx][ny] = distances[cx][cy] + 1;
+        qx[tail] = nx;
+        qy[tail] = ny;
+        tail++;
       }
     }
   }
@@ -487,41 +539,32 @@ void encoderPivot(bool leftTurn) {
 
   setMotorSpeed(0, 0); delay(50); 
   
-  // ==========================================
-  // PHASE 2: Slow Seek for Line
-  // ==========================================
-  Serial.println("Phase 2: Slow Seek for Line...");
+  // PHASE 2: Slow seek — creep in the same direction until centre sensors find the line
   unsigned long seekStart = millis();
 
   while (true) {
     readSensors();
-    
-    // Direction-Aware Centering
-    if (leftTurn) {
-      if (sensorValues[3] > THRESHOLD_LINE) {
-        Serial.println("Phase 2 Success: Line Found (Trailing CCW)");
-        break; 
-      }
-    } else {
-      if (sensorValues[2] > THRESHOLD_LINE) {
-        Serial.println("Phase 2 Success: Line Found (Trailing CW)");
-        break; 
-      }
-    }
 
-    if (millis() - seekStart > PIVOT_TURN_TIMEOUT) {
-      Serial.println("ERROR: Phase 2 Timed Out! (Check Motor Torque)");
+    // Centre sensors confirm we're on the line — stop immediately
+    if (sensorValues[2] > THRESHOLD_LINE || sensorValues[3] > THRESHOLD_LINE) {
+      Serial.println("--- LINE FOUND ---");
       break;
     }
 
-    // **FORCED SPEED INCREASE TO PREVENT STALLING**
-    int safeSeekSpeed = 120; 
-    if (leftTurn) setMotorSpeed(-safeSeekSpeed, safeSeekSpeed);
-    else setMotorSpeed(safeSeekSpeed, -safeSeekSpeed);
-    
+    // Safety timeout — if line not found within timeout
+    if (millis() - seekStart > PIVOT_TURN_TIMEOUT) {
+      Serial.println("WARNING: Seek timed out");
+      break;
+    }
+
+    // Keep rotating slowly in the same direction as the original turn
+    if (leftTurn) {
+      setMotorSpeed(-SEEK_SPEED, SEEK_SPEED);
+    } else {
+      setMotorSpeed(SEEK_SPEED, -SEEK_SPEED);
+    }
     delay(1);
   }
-
   setMotorSpeed(0, 0); delay(30);
   Serial.println("--- PIVOT FINISHED ---");
 }
@@ -576,7 +619,16 @@ void executeUTurn() {
 // ------------------------------------------------------------
 void handleJunction(bool leftDetected, bool rightDetected) {
   Serial.println("\n>>> PHYSICAL JUNCTION DETECTED <<<");
-  setMotorSpeed(0, 0); delay(50);
+  
+  // 1. Stop and let the physical chassis settle
+  setMotorSpeed(0, 0); delay(50); 
+
+  // 2. Read the sensors one final time while perfectly still
+  // This catches the crossbar even if the robot hit it diagonally
+  readSensors();
+  bool canGoLeft     = leftDetected || (sensorValues[0] > THRESHOLD_JUNCTION);
+  bool canGoRight    = rightDetected || (sensorValues[5] > THRESHOLD_JUNCTION);
+  bool canGoStraight = false;
 
   portDISABLE_INTERRUPTS();
   leftTicks  = 0; rightTicks = 0;
@@ -585,14 +637,11 @@ void handleJunction(bool leftDetected, bool rightDetected) {
   long targetPushL = (long)(JUNCTION_PUSH_CM * TICKS_PER_CM_L);
   long targetPushR = (long)(JUNCTION_PUSH_CM * TICKS_PER_CM_R);
 
-  bool canGoLeft     = leftDetected;
-  bool canGoRight    = rightDetected;
-  bool canGoStraight = false;
-
+  Serial.println("Pushing forward to axle...");
   unsigned long pushStart = millis();
   int lastPushL = 0; int lastPushR = 0;
 
-  // 14cm push to center the robot on the cross
+  // 3. The 14cm push
   while (true) {
     portDISABLE_INTERRUPTS();
     long curL = leftTicks; long curR = rightTicks;
@@ -609,43 +658,64 @@ void handleJunction(bool leftDetected, bool rightDetected) {
       lastPushL = lSpeed; lastPushR = rSpeed;
     }
 
-    readSensors();
-    if (sensorValues[0] > THRESHOLD_JUNCTION) canGoLeft  = true;
-    if (sensorValues[5] > THRESHOLD_JUNCTION) canGoRight = true;
+    // *** DELETED THE CONTINUOUS SENSOR SCANNING FROM HERE! ***
+    // The robot will no longer hallucinate paths while pushing.
+    
     delay(1);
   } 
 
   setMotorSpeed(0, 0); delay(50);
   readSensors();
+  
+// ... (after the push while-loop and stopping the motors)
+  setMotorSpeed(0, 0); delay(50);
+  readSensors();
 
-  // THE ELEGANT FINISH BOX CHECK
+  // 1. ARRIVE AT NODE: Update Coordinate FIRST!
+  if (heading == 0) posY++;
+  if (heading == 1) posX++;
+  if (heading == 2) posY--;
+  if (heading == 3) posX--;
+
+  if (posX < 0 || posX >= MAZE_SIZE || posY < 0 || posY >= MAZE_SIZE) {
+    setMotorSpeed(0, 0); isRunning = false;   
+    Serial.printf("\n[CRITICAL ERROR] Invalid Coordinate: (%d, %d)\n", posX, posY);
+    while (true) { digitalWrite(LED_MODE, HIGH); delay(100); digitalWrite(LED_MODE, LOW); delay(100); }
+  }
+
+  // 2. NOW check for the Finish Box
   bool allBlackBox = true;
   for (int i = 0; i < 6; i++) {
     if (sensorValues[i] < THRESHOLD_LINE) { allBlackBox = false; break; }
   }
 
   if (allBlackBox) {
-    Serial.println("MAZE SOLVED! (Verified Finish Box post-push)");
+    Serial.println("MAZE SOLVED!");
+// ... (rest of the finish box logic stays the same)
     isRunning = false; 
     
     for (int f = 0; f < 6; f++) { digitalWrite(LED_MODE, f % 2); delay(200); }
     digitalWrite(LED_MODE, (runMode == 1) ? HIGH : LOW);
     
-    if (targetX == 4) { targetX = 0; targetY = 0; } 
-    else              { targetX = 4; targetY = 4; }
+    if (targetX == GOAL_X && targetY == GOAL_Y) { 
+        targetX = START_X; targetY = START_Y; 
+    } else { 
+        targetX = GOAL_X; targetY = GOAL_Y; 
+    }
     
     floodFill(); printMaze();
     return; 
   }
 
-  // ======================================================
-  // 1. ARRIVE AT NODE: Update Physical Coordinate First!
-  // ======================================================
-  
-  if (heading == 0 && posY < MAZE_SIZE - 1) posY++;
-  if (heading == 1 && posX < MAZE_SIZE - 1) posX++;
-  if (heading == 2 && posY > 0)             posY--;
-  if (heading == 3 && posX > 0)             posX--;
+  // --- EMERGENCY BOUNDARY STOP ---
+  if (posX < 0 || posX >= MAZE_SIZE || posY < 0 || posY >= MAZE_SIZE) {
+    setMotorSpeed(0, 0); isRunning = false;   
+    Serial.println("\n====================================");
+    Serial.printf("[CRITICAL ERROR] DROVE OFF THE MAP!\n");
+    Serial.printf("Invalid Coordinate Reached: (%d, %d)\n", posX, posY);
+    Serial.println("====================================");
+    while (true) { digitalWrite(LED_MODE, HIGH); delay(100); digitalWrite(LED_MODE, LOW); delay(100); }
+  }
 
   canGoStraight = (sensorValues[2] > THRESHOLD_LINE || sensorValues[3] > THRESHOLD_LINE);
 
@@ -706,7 +776,7 @@ void handleJunction(bool leftDetected, bool rightDetected) {
     delay(150); 
   }
 
-// ======================================================
+  // ======================================================
   // 5. DEPARTURE: Commit to New Heading and Reset Distance
   // ======================================================
   heading = nextHeading;
