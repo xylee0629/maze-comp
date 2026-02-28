@@ -9,15 +9,15 @@
 // ============================================================
 
 // --- GRID & JUNCTION HANDLING ---
-const float GRID_CELL_CM = 18.0;   // Distance of ONE full maze square (center to center)
+const float GRID_CELL_CM = 25.0;   // Distance of ONE full maze square (center to center)
 const float JUNCTION_PUSH_CM = 14; // Distance from IR sensors to wheel axle
 const float TURN_90_CM = 9;        // (Wheelbase_in_cm * 3.1415) / 4
 
 // --- CALIBRATED SPEEDS ---
-const int L_BASE  = 180;  // Safe speed for exploration and PID mapping
-const int R_BASE  = 180; 
-const int L_DASH  = 255;  // Maximum speed for Dash Mode (Speedrun)
-const int R_DASH  = 255;
+const int L_BASE  = 120;  // Safe speed for exploration and PID mapping
+const int R_BASE  = 120; 
+const int L_DASH  = 150;  // Maximum speed for Dash Mode (Speedrun)
+const int R_DASH  = 150;
 const int L_PIVOT = 200;
 const int R_PIVOT = 200;
 const int SEEK_SPEED = 80; 
@@ -30,7 +30,7 @@ const int WHITE_VALUE = 300;
 
 // --- IR SENSOR DETECTION THRESHOLD ---
 const int THRESHOLD_LINE     = 750;  // Sensors 1-4: line following
-const int THRESHOLD_JUNCTION = 700;  // Sensors 0 & 5: junction detection
+const int THRESHOLD_JUNCTION = 750;  // Sensors 0 & 5: junction detection
 
 // --- TIME SETTINGS ---
 const int JUNCTION_PUSH_TIMEOUT = 3000; 
@@ -81,7 +81,7 @@ int sensorValues[6];
 // ============================================================
 // FLOODFILL MEMORY & GRID SETTINGS
 // ============================================================
-#define MAZE_SIZE 9 // 9x9 grid (Coordinates 0 to 8)
+#define MAZE_SIZE 5 // 9x9 grid (Coordinates 0 to 8)
 
 byte walls[MAZE_SIZE][MAZE_SIZE];     // Bitmask for walls: 1=N, 2=E, 4=S, 8=W
 int distances[MAZE_SIZE][MAZE_SIZE];  // Distance to the current goal
@@ -93,8 +93,8 @@ int posY = 0; // Robot's physical Y coordinate
 int heading = 0; 
 
 // Target tracking for multiple runs
-int targetX = 8; 
-int targetY = 8; 
+int targetX = 4; 
+int targetY = 4; 
 
 // --- MAZE STATE ---
 int  blackBoxCount    = 0;       
@@ -129,7 +129,7 @@ void IRAM_ATTR countRight() {
 // ============================================================
 void setup() {
 // ============================================================
-  Serial.begin(115200);
+  Serial.begin(500000);
 
   pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT); pinMode(PWMA, OUTPUT);
   pinMode(BIN1, OUTPUT); pinMode(BIN2, OUTPUT); pinMode(PWMB, OUTPUT);
@@ -178,7 +178,6 @@ void loop() {
       
       if (runMode == 0) {
         Serial.println("--- EXPLORATION STARTED ---");
-        targetX = 8; targetY = 8; 
         initMaze(); 
       } else {
         Serial.println("--- DASH STARTED ---");
@@ -275,8 +274,8 @@ void loop() {
       for (int f = 0; f < 6; f++) { digitalWrite(LED_MODE, f % 2); delay(200); }
       digitalWrite(LED_MODE, (runMode == 1) ? HIGH : LOW);
 
-      if (targetX == 8) { targetX = 0; targetY = 0; }
-      else              { targetX = 8; targetY = 8; }
+      if (targetX == 4) { targetX = 0; targetY = 0; }
+      else              { targetX = 4; targetY = 4; }
       floodFill(); printMaze();
       return;
     }
@@ -285,7 +284,6 @@ void loop() {
     if (runMode == 0) {
       updateWalls(false, true, false);
       floodFill();
-      printMaze();
     }
 
     // 4. Reset Ticks to measure distance to the next cell perfectly
@@ -449,38 +447,83 @@ void encoderPivot(bool leftTurn) {
 
   int lastLSpeed = 0; int lastRSpeed = 0;
 
+  // ==========================================
+  // PHASE 1: Fast Encoder Spin 
+  // ==========================================
+  Serial.println("Phase 1: Encoder Spin...");
+  
   while (true) {
     portDISABLE_INTERRUPTS();
     long curL = leftTicks; long curR = rightTicks;
     portENABLE_INTERRUPTS();
 
-    if (curL >= targetL && curR >= targetR) break;
-    if (millis() - pivotStart > PIVOT_TURN_TIMEOUT) break;
+    if (curL >= targetL && curR >= targetR) {
+      Serial.println("Phase 1 Success: Target reached.");
+      break;
+    }
+    if (millis() - pivotStart > PIVOT_TURN_TIMEOUT) {
+      Serial.println("ERROR: Phase 1 Timed Out! (Are the encoders ticking?)");
+      break;
+    }
 
-    int currentLSpeed = (leftTurn) ? ((curL < targetL) ? -L_PIVOT : 0) : ((curL < targetL) ?  L_PIVOT : 0);
-    int currentRSpeed = (leftTurn) ? ((curR < targetR) ?  R_PIVOT : 0) : ((curR < targetR) ? -R_PIVOT : 0);
+    int currentLSpeed = 0;
+    int currentRSpeed = 0;
+    
+    // Restored exact original logic
+    if (leftTurn) {
+      currentLSpeed = (curL < targetL) ? -L_PIVOT : 0;
+      currentRSpeed = (curR < targetR) ?  R_PIVOT : 0;
+    } else {
+      currentLSpeed = (curL < targetL) ?  L_PIVOT : 0;
+      currentRSpeed = (curR < targetR) ? -R_PIVOT : 0;
+    }
 
     if (currentLSpeed != lastLSpeed || currentRSpeed != lastRSpeed) {
       setMotorSpeed(currentLSpeed, currentRSpeed);
       lastLSpeed = currentLSpeed; lastRSpeed = currentRSpeed;
     }
-    delay(1);
+    delay(1); 
   }
 
   setMotorSpeed(0, 0); delay(50); 
+  
+  // ==========================================
+  // PHASE 2: Slow Seek for Line
+  // ==========================================
+  Serial.println("Phase 2: Slow Seek for Line...");
   unsigned long seekStart = millis();
 
   while (true) {
     readSensors();
-    if (sensorValues[2] > THRESHOLD_LINE || sensorValues[3] > THRESHOLD_LINE) break;
-    if (millis() - seekStart > PIVOT_TURN_TIMEOUT) break;
+    
+    // Direction-Aware Centering
+    if (leftTurn) {
+      if (sensorValues[3] > THRESHOLD_LINE) {
+        Serial.println("Phase 2 Success: Line Found (Trailing CCW)");
+        break; 
+      }
+    } else {
+      if (sensorValues[2] > THRESHOLD_LINE) {
+        Serial.println("Phase 2 Success: Line Found (Trailing CW)");
+        break; 
+      }
+    }
 
-    if (leftTurn) setMotorSpeed(-SEEK_SPEED, SEEK_SPEED);
-    else setMotorSpeed(SEEK_SPEED, -SEEK_SPEED);
+    if (millis() - seekStart > PIVOT_TURN_TIMEOUT) {
+      Serial.println("ERROR: Phase 2 Timed Out! (Check Motor Torque)");
+      break;
+    }
+
+    // **FORCED SPEED INCREASE TO PREVENT STALLING**
+    int safeSeekSpeed = 120; 
+    if (leftTurn) setMotorSpeed(-safeSeekSpeed, safeSeekSpeed);
+    else setMotorSpeed(safeSeekSpeed, -safeSeekSpeed);
+    
     delay(1);
   }
 
   setMotorSpeed(0, 0); delay(30);
+  Serial.println("--- PIVOT FINISHED ---");
 }
 
 void executeUTurn() {
@@ -588,8 +631,8 @@ void handleJunction(bool leftDetected, bool rightDetected) {
     for (int f = 0; f < 6; f++) { digitalWrite(LED_MODE, f % 2); delay(200); }
     digitalWrite(LED_MODE, (runMode == 1) ? HIGH : LOW);
     
-    if (targetX == 8) { targetX = 0; targetY = 0; } 
-    else              { targetX = 8; targetY = 8; }
+    if (targetX == 4) { targetX = 0; targetY = 0; } 
+    else              { targetX = 4; targetY = 4; }
     
     floodFill(); printMaze();
     return; 
@@ -663,13 +706,19 @@ void handleJunction(bool leftDetected, bool rightDetected) {
     delay(150); 
   }
 
-  // ======================================================
+// ======================================================
   // 5. DEPARTURE: Commit to New Heading and Reset Distance
   // ======================================================
   heading = nextHeading;
 
-  // Wipe the encoders so the distance to the NEXT cell is perfectly tracked
-  portDISABLE_INTERRUPTS();
+  // --- NEW: Departure Kickstart ---
+  // Force the motors ON to physically clear the intersection crosshair
+  int kickSpd = (runMode == 1) ? L_DASH : L_BASE;
+  setMotorSpeed(kickSpd, kickSpd);
+  delay(10); // Drive blindly for 0.1s to escape the junction tape
+
+  // Wipe the encoders using safe Arduino core interrupts
+  noInterrupts();
   leftTicks = 0; rightTicks = 0;
-  portENABLE_INTERRUPTS();
-}
+  interrupts();
+} // End of handleJunction
