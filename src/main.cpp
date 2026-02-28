@@ -1,10 +1,40 @@
 // PID with left hand and right hand seperate memory, non-stable
+// Possible add: (when is running, green LED is ON)
 
 #include <Arduino.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
-// --- PINS ---
+
+// TWEAKABLE VARIABLES
+// --- JUNCTION HANDLING (ENCODER DISTANCE) ---
+const float JUNCTION_PUSH_CM = 14; // Distance from IR sensors to wheel axle in cm
+const float TURN_90_CM = 9;       // (Wheelbase_in_cm * 3.1415) / 4
+// --- CALIBRATED SPEEDS ---
+const int L_BASE  = 180;  // Matched from working line-follower test
+const int R_BASE  = 180; 
+const int L_PIVOT = 200;
+const int R_PIVOT = 200;
+const int SEEK_SPEED = 80; // Affects both Pivot at junction and U Turn time when seeking the line 
+// --- PID CONTROL SETTINGS ---
+float Kp = 0.08;  // Proportional: How hard to steer based on current error
+float Kd = 0.5;   // Derivative: How hard to resist sudden changes (dampening)
+int lastError = 0;
+const int WHITE_VALUE = 300; // White Background Sensor Values  for PID calc
+// --- IR SENSOR DETECTION THRESHOLD ---
+const int THRESHOLD_LINE     = 750;  // Sensors 1-4: line following
+const int THRESHOLD_JUNCTION = 700;  // Sensors 0 & 5: junction detection
+// --- TIME SETTINGS ---
+const int JUNCTION_PUSH_TIMEOUT = 3000; // how much time checked for robot to consider failed front movement at junction
+const int PIVOT_TURN_TIMEOUT = 3000; // how much time checked for robot to consider failed forced (quick) turn
+const int U_TURN_SPIN_TIMEOUT = 4000; // how much time checked for robot to consider failed forced (quick) turn at U turn
+const int U_TURN_SEEK_TIMEOUT = 2000; // how much time checked for robot to consider unable to find line after U turn 
+
+
+
+
+// ---CONEECTION PINS---
+// Motor Driver Pins
 #define AIN1 26
 #define AIN2 25
 #define PWMA 27
@@ -14,56 +44,35 @@
 #define STBY 4
 const int SENSOR_PINS[6] = {33, 32, 35, 34, 39, 36}; 
 
-// --- ENCODER PINS ---
+// Encoder Pins 
 #define ENC_L_A 16  
 #define ENC_R_A 18  
 
-// --- BUTTON PINS ---
+// Button Pins 
 #define BTN_STRATEGY 12 
 #define BTN_MODE     13 
 #define BTN_START    14 
 
-// --- LED INDICATOR PINS ---
+// LED Indicator Pins 
 #define LED_STRATEGY 5  // ON = Left-Hand Rule, OFF = Right-Hand Rule
 #define LED_MODE     15 // OFF = Explore Mode, ON = Dash Mode
+#define LED_START    2
 
 // --- ENCODER CONSTANTS ---
 const float TICKS_PER_CM_L = 49.5;
 const float TICKS_PER_CM_R = 45.4;
-
-// !! IMPORTANT !! MEASURE YOUR ROBOT AND CHANGE THESE TWO NUMBERS:
-const float JUNCTION_PUSH_CM = 14; // Distance from IR sensors to wheel axle in cm
-const float TURN_90_CM = 9;       // (Wheelbase_in_cm * 3.1415) / 4
-
-// --- ENCODER COUNTERS ---
 volatile long leftTicks = 0;
 volatile long rightTicks = 0;
+// --- INTERRUPT SERVICE ROUTINES (ISRs) ---
+volatile unsigned long lastLeftTick  = 0;
+volatile unsigned long lastRightTick = 0;
 
 // --- STATE MACHINE VARIABLES ---
 bool useLeftHandRule = true; // true = Left bias, false = Right bias
 int runMode = 0;             // 0 = Explore, 1 = Dash
 bool isRunning = false;      // false = Idle, true = Driving
 
-// --- CALIBRATED SPEEDS ---
-const int L_BASE  = 180;  // Matched from working line-follower test
-const int R_BASE  = 180; 
-const int L_NUDGE = 80;   // Sharper correction from working line-follower test
-const int R_NUDGE = 80;  
-const int L_PIVOT = 200;
-const int R_PIVOT = 200;
-
-// --- PID CONTROL SETTINGS ---
-float Kp = 0.08;  // Proportional: How hard to steer based on current error
-float Kd = 0.5;   // Derivative: How hard to resist sudden changes (dampening)
-int lastError = 0;
-
-// --- SETTINGS ---
-// Split threshold: line-follow needs to be sensitive (750),
-// junction outer sensors can afford to be stricter (800) to avoid false triggers.
-const int THRESHOLD_LINE     = 750;  // Sensors 1-4: line following
-const int THRESHOLD_JUNCTION = 700;  // Sensors 0 & 5: junction detection
-const int BLIND_TURN_TIME = 200; 
-const int DEAD_END_LIMIT  = 50;  
+// --- IR SENSORS ---
 int whiteCount = 0;
 int sensorValues[6];
 
@@ -92,10 +101,6 @@ void encoderPivot(bool leftTurn);
 void recordTurn(char turn);
 void executeUTurn();
 void simplifyPath();
-
-// --- INTERRUPT SERVICE ROUTINES (ISRs) ---
-volatile unsigned long lastLeftTick  = 0;
-volatile unsigned long lastRightTick = 0;
 
 void IRAM_ATTR countLeft() { 
   unsigned long now = micros();
@@ -308,7 +313,7 @@ if (digitalRead(BTN_START) == LOW) {
 
   for (int i = 0; i < 6; i++) {
     // Subtract a baseline (e.g., 300 for white floor) to clean up sensor noise
-    int val = sensorValues[i] - 300; 
+    int val = sensorValues[i] - WHITE_VALUE; 
     if (val < 0) val = 0; 
 
     weightedSum += (long)val * weights[i];
@@ -346,6 +351,8 @@ if (digitalRead(BTN_START) == LOW) {
 
   setMotorSpeed(leftSpeed, rightSpeed);
 } // End of loop()
+
+
 
 // ============================================================
 // FUNCTIONS
@@ -410,7 +417,7 @@ void encoderPivot(bool leftTurn) {
     portENABLE_INTERRUPTS();
 
     if (curL >= targetL && curR >= targetR) break;
-    if (millis() - pivotStart > 3000) break;
+    if (millis() - pivotStart > PIVOT_TURN_TIMEOUT) break;
 
     // Calculate what the speed SHOULD be
     int currentLSpeed = 0;
@@ -440,7 +447,6 @@ void encoderPivot(bool leftTurn) {
   Serial.println("--- PHASE 1 DONE: Seeking line ---");
 
   // PHASE 2: Slow seek — creep in the same direction until centre sensors find the line
-  const int SEEK_SPEED = 80;
   unsigned long seekStart = millis();
 
   while (true) {
@@ -453,7 +459,7 @@ void encoderPivot(bool leftTurn) {
     }
 
     // Safety timeout — if line not found within 1.5s something is wrong
-    if (millis() - seekStart > 3000) {
+    if (millis() - seekStart > PIVOT_TURN_TIMEOUT) {
       Serial.println("WARNING: Seek timed out");
       break;
     }
@@ -506,7 +512,7 @@ while (true) {
     portENABLE_INTERRUPTS();
 
     if (curL >= targetPushL && curR >= targetPushR) break;
-    if (millis() - pushStart > 3000) break;
+    if (millis() - pushStart > JUNCTION_PUSH_TIMEOUT) break; // JUNCTION PUSH TIMEOUT
 
     int lSpeed = (curL < targetPushL) ? L_BASE : 0;
     int rSpeed = (curR < targetPushR) ? R_BASE : 0;
@@ -710,7 +716,7 @@ void executeUTurn() {
     portENABLE_INTERRUPTS();
 
     if (curL >= targetSpinL && curR >= targetSpinR) break;
-    if (millis() - spinStart > 4000) {
+    if (millis() - spinStart > U_TURN_SPIN_TIMEOUT) { // U TURN SPIN TIMEOUT 
       Serial.println("ERROR: U-TURN SPIN TIMED OUT");
       break;
     }
@@ -735,7 +741,6 @@ void executeUTurn() {
   // PHASE 3: Slow seek to lock back onto the line
   // ==========================================================
   Serial.println("U-Turn Phase 3: Seeking line...");
-  const int SEEK_SPEED = 80;
   unsigned long seekStart = millis();
 
   // Set the speed ONCE outside the loop. The ESP32 will maintain it automatically!
@@ -749,7 +754,7 @@ void executeUTurn() {
       break;
     }
 
-    if (millis() - seekStart > 2000) {
+    if (millis() - seekStart > U_TURN_SEEK_TIMEOUT) { // U TURN SEEK TIMEOUT
       Serial.println("WARNING: U-Turn seek timed out");
       break;
     }
