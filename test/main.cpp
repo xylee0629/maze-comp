@@ -8,22 +8,19 @@
 
 // TWEAKABLE VARIABLES
 // --- JUNCTION HANDLING (ENCODER DISTANCE) ---
-const float JUNCTION_PUSH_CM = 14; // Distance from IR sensors to wheel axle in cm; Original: 14
-const float TURN_90_CM = 11;       // (Wheelbase_in_cm * 3.1415) / 4; Original: 9
+const float JUNCTION_PUSH_CM = 11; // Distance from IR sensors to wheel axle in cm; Original: 14
+const float TURN_90_CM = 10;       // (Wheelbase_in_cm * 3.1415) / 4; Original: 9
 // --- CALIBRATED SPEEDS ---
-const int L_BASE  = 200;  // Matched from working line-follower test
-const int R_BASE  = 200; 
-const int L_PIVOT = 200;
-const int R_PIVOT = 200;
-const int SEEK_SPEED = 80;//Affects both Pivot at junction and U Turn time when seeking the line 
+const int L_BASE  = 255;  // Matched from working line-follower test
+const int R_BASE  = 255; 
+const int L_PIVOT = 255;
+const int R_PIVOT = 255;
+const int SEEK_SPEED = 255; // Affects both Pivot at junction and U Turn time when seeking the line 
 // --- PID CONTROL SETTINGS ---
-float Kp = 0.15;  // Proportional: How hard to steer based on current error
-float Kd = 1.5;   // Derivative: How hard to resist sudden changes (dampening)
-float Ki = 0.0; // Integral: Corrects steady-state error over time
+float Kp = 0.10;  // Proportional: How hard to steer based on current error
+float Kd = 0.4;   // Derivative: How hard to resist sudden changes (dampening)
 int lastError = 0;
-long integral = 0;               // Accumulates the error over time
-const int INTEGRAL_LIMIT = 5000; // Anti-windup cap to prevent mathematical explosions
-const int WHITE_VALUE = 300;     // White Background Sensor Values  for PID calc
+const int WHITE_VALUE = 300; // White Background Sensor Values  for PID calc
 // --- IR SENSOR DETECTION THRESHOLD ---
 const int THRESHOLD_LINE     = 1000;  // Sensors 1-4: line following
 const int THRESHOLD_JUNCTION = 1000;  // Sensors 0 & 5: junction detection
@@ -74,8 +71,6 @@ volatile unsigned long lastRightTick = 0;
 bool useLeftHandRule = true; // true = Left bias, false = Right bias
 int runMode = 0;             // 0 = Explore, 1 = Dash
 bool isRunning = false;      // false = Idle, true = Driving
-bool lockedLeftJunction  = false;
-bool lockedRightJunction = false;
 
 // --- IR SENSORS ---
 int whiteCount = 0;
@@ -97,7 +92,6 @@ int rightDashIndex = 0;
 // --- MAZE STATE ---
 int  blackBoxCount    = 0;       
 bool currentlyOnBox   = false; 
-int junctionConfirmCount = 0;
 
 // --- FUNCTION DECLARATIONS ---
 void readSensors();
@@ -144,13 +138,11 @@ void setup() {
   pinMode(BTN_MODE,     INPUT_PULLUP);
   pinMode(BTN_START,    INPUT_PULLUP);
 
-// LED Setup
+  // LED Setup
   pinMode(LED_STRATEGY, OUTPUT);
   pinMode(LED_MODE,     OUTPUT);
-  pinMode(LED_START,    OUTPUT); // <-- ADDED THIS LINE
   digitalWrite(LED_STRATEGY, HIGH); // Default: Left-Hand Rule
   digitalWrite(LED_MODE,     LOW);  // Default: Explore Mode
-  digitalWrite(LED_START,    LOW);  // <-- ADDED THIS LINE (Default off)
 
   // Encoder Setup
   pinMode(ENC_L_A, INPUT_PULLUP);
@@ -183,12 +175,8 @@ void loop() {
 if (digitalRead(BTN_START) == LOW) {
     isRunning = !isRunning;
     if (isRunning) {
-      digitalWrite(LED_START, HIGH); // <-- Turn Green LED ON
-      
       leftTicks = 0; rightTicks = 0; whiteCount = 0; blackBoxCount = 0;       
-      currentlyOnBox = false; junctionConfirmCount = 0; lockedLeftJunction  = false;
-      lockedRightJunction = false;
-      integral = 0; // <-- RESET INTEGRAL MEMORY HERE
+      currentlyOnBox = false;
       
       // --- Reset variables based on mode & strategy ---
       if (runMode == 0) {
@@ -204,7 +192,6 @@ if (digitalRead(BTN_START) == LOW) {
       }
       
     } else {
-      digitalWrite(LED_START, LOW); // <-- Turn Green LED OFF
       setMotorSpeed(0, 0);
       Serial.println("--- RUN STOPPED ---");
     }
@@ -301,45 +288,23 @@ if (digitalRead(BTN_START) == LOW) {
 
   // Only treat as junction if centre sensors confirm we're on the main line,
   // not just riding the edge of a curve.
-  bool onLine = (sensorValues[2] > THRESHOLD_LINE) || (sensorValues[3] > THRESHOLD_LINE);
+  bool onLine = (sensorValues[2] > THRESHOLD_LINE) || (sensorValues[3] > THRESHOLD_LINE)
+             || (sensorValues[1] > THRESHOLD_LINE) || (sensorValues[4] > THRESHOLD_LINE);
 
   if (onLine && (leftJunction || rightJunction)) {
-    if (junctionConfirmCount == 0) {
-      // Lock in the flags from the FIRST detection frame
-      lockedLeftJunction  = leftJunction;
-      lockedRightJunction = rightJunction;
-    }
-    junctionConfirmCount++;
-    if (junctionConfirmCount >= 5) {
-        junctionConfirmCount = 0;
-        handleJunction(lockedLeftJunction, lockedRightJunction);
-        return;
-    }
-  } else {
-    junctionConfirmCount = 0;
+    handleJunction(leftJunction, rightJunction);
+    return; 
   }
   
- // --- PRIORITY 2.5: LINE LOST RECOVERY ---
+ // --- PRIORITY 2.5: DEAD END FALLBACK --- 
   bool isLineLost = true;
   for (int i = 0; i < 6; i++) {
     if (sensorValues[i] > THRESHOLD_LINE) { isLineLost = false; break; }
   }
-
+  
   if (isLineLost) {
-    whiteCount++;
-    if (whiteCount < 80) {
-      // Line briefly lost — keep driving straight with last known correction
-      // This handles overshoots and slight drifts without panicking
-      setMotorSpeed(L_BASE, R_BASE);
-      return;
-    } else {
-      // Lost for a long time — genuinely at a dead end, do U-turn
-      whiteCount = 0;
-      handleJunction(false, false);
-      return;
-    }
-  } else {
-    whiteCount = 0;
+    handleJunction(false, false); 
+    return;
   }
 
   // --- PRIORITY 3: PID LINE FOLLOWING ---
@@ -363,20 +328,8 @@ if (digitalRead(BTN_START) == LOW) {
     error = lastError; // If reading is weak, hold the last known error
   }
 
-// Step 3: Calculate PID Correction
-  integral = integral + error;
-
-  // Anti-Windup Part 1: Hard limits
-  if (integral > INTEGRAL_LIMIT) integral = INTEGRAL_LIMIT;
-  if (integral < -INTEGRAL_LIMIT) integral = -INTEGRAL_LIMIT;
-
-  // Anti-Windup Part 2: Zero-Crossing Reset
-  if (error == 0 || (error > 0 && lastError < 0) || (error < 0 && lastError > 0)) {
-    integral = 0;
-  }
-
-  // Calculate full PID steering force
-  int motorCorrection = (Kp * error) + (Ki * integral) + (Kd * (error - lastError));
+  // Step 3: Calculate PID Correction
+  int motorCorrection = (Kp * error) + (Kd * (error - lastError));
   lastError = error;
 
   int currentThrottleL = L_BASE - abs(error * 0.02); 
@@ -486,8 +439,8 @@ void encoderPivot(bool leftTurn) {
     delay(1);
   }
 
-  setMotorSpeed(0, 0);
-  delay(50); // Let robot physically settle before sensing
+  /*setMotorSpeed(0, 0);
+  delay(50);*/ // Let robot physically settle before sensing
 
   Serial.println("--- PHASE 1 DONE: Seeking line ---");
 
@@ -497,9 +450,17 @@ void encoderPivot(bool leftTurn) {
   while (true) {
     readSensors();
 
-    if (sensorValues[2] > THRESHOLD_LINE || sensorValues[3] > THRESHOLD_LINE) {
-      Serial.println("--- LINE FOUND ---");
-      break;
+   // --- DIRECTION-AWARE CENTERING ---
+    if (leftTurn) {
+      if (sensorValues[3] > THRESHOLD_LINE) {
+        Serial.println("--- LINE FOUND (Centered Left) ---");
+        break;
+      }
+    } else {
+      if (sensorValues[2] > THRESHOLD_LINE) {
+        Serial.println("--- LINE FOUND (Centered Right) ---");
+        break;
+      }
     }
 
     if (millis() - seekStart > PIVOT_TURN_TIMEOUT) {
@@ -507,6 +468,7 @@ void encoderPivot(bool leftTurn) {
       break;
     }
 
+    // Keep rotating slowly in the same direction as the original turn
     if (leftTurn) {
       setMotorSpeed(-SEEK_SPEED, SEEK_SPEED);
     } else {
@@ -526,8 +488,7 @@ void encoderPivot(bool leftTurn) {
 // ------------------------------------------------------------
 void handleJunction(bool leftDetected, bool rightDetected) {
   Serial.println("\n>>> JUNCTION DETECTED <<<");
-  setMotorSpeed(0, 0);  // <-- ADD THIS BACK
-  delay(100);
+
   portDISABLE_INTERRUPTS();
   leftTicks  = 0;
   rightTicks = 0;
@@ -647,8 +608,7 @@ if (allBlackBox) {
         if (nextMove == 'L') encoderPivot(true);
         else if (nextMove == 'R') encoderPivot(false);
         else if (nextMove == 'S') {
-          setMotorSpeed(L_BASE, R_BASE);
-          delay(150);
+          return;
         }
       } else {
         setMotorSpeed(0, 0);
@@ -780,7 +740,7 @@ void executeUTurn() {
   }
 
   setMotorSpeed(0, 0);
-  delay(100);
+  delay(1); 
 
   // ==========================================================
   // PHASE 3: Slow seek to lock back onto the line
@@ -808,7 +768,7 @@ void executeUTurn() {
   }
 
   setMotorSpeed(0, 0);
-  delay(50);
+  delay(1);
   setMotorSpeed(L_BASE, R_BASE); // Re-enter line
   Serial.println("--- U-TURN FINISHED ---");
 }
