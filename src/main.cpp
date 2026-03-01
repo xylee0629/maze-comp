@@ -107,6 +107,7 @@ void encoderPivot(bool leftTurn);
 void recordTurn(char turn);
 void executeUTurn();
 void simplifyPath();
+void debugSensors();
 
 void IRAM_ATTR countLeft() { 
   unsigned long now = micros();
@@ -127,6 +128,7 @@ void IRAM_ATTR countRight() {
 // ============================================================
 void setup() {
 // ============================================================
+// debugSensors();
   //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
 
@@ -862,4 +864,30 @@ void simplifyPath() {
   Serial.print(useLeftHandRule ? "Left Path: [ " : "Right Path: [ ");
   for (int i = 0; i < len; i++) { Serial.print(path[i]); Serial.print(' '); }
   Serial.println("]");
+}
+
+void debugSensors()
+{
+  Serial.println("--- SENSOR DEBUG: STARTING 10 SECOND TEST ---");
+  
+  unsigned long startDebug = millis();
+
+  // Loop exactly until 10,000 milliseconds (10 seconds) have passed
+  while (millis() - startDebug < 10000) { 
+    
+    // 1. Update the sensorValues array
+    readSensors();
+
+    // 2. Print them in a clean, spaced-out format
+    Serial.printf("Time: %5lu ms | Sensors: %4d | %4d | %4d | %4d | %4d | %4d\n",
+                  millis() - startDebug,
+                  sensorValues[0], sensorValues[1], sensorValues[2],
+                  sensorValues[3], sensorValues[4], sensorValues[5]);
+
+    // 3. Pause briefly so the Serial Monitor doesn't scroll too fast
+    //delay(100); 
+  }
+
+  Serial.println("--- SENSOR DEBUG: TEST COMPLETE ---");
+  delay(1000);
 }
