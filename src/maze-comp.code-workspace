@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "maze-comp",
+			"path": ".."
+		},
+		{
+			"name": "PCB Project",
+			"path": "../../PCB Project"
+		}
+	],
+	"settings": {}
+}
